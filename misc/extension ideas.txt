@@ -1,0 +1,36 @@
+FITNESS FUNCTION IDEAS:
+* minimum accuracy metric for genetic training. could combine with trainable parameters to optimize the generated circuits
+	* first read the paper again to understand how to implement it
+	* then try implement it and check if it is faster to compute than classification accuracy and if it gets good results after parameter training
+
+CIRCUIT EXPRESSIVITY IDEAS:
+* circuits with classical encoding function / functions (can add a bit to gate representation to choose between no encoding function or a specific one of many)
+	can compare accuracies with original paper's method (run time should be the same)
+
+* circuits with trainable parameters (to optimize kernel target alignment with gradient-based methods)
+	* could insert trainable parameters after genetic training to further optimize the proportionality parameters.
+	* can compare accuracies and run times with original method
+
+ENSEMBLE IDEAS:
+* have each chromosome encode multiple kernels (maybe from 2 to 10, depending on each individual kernel's size? smaller kernels could have bigger ensembles)
+	* have each of the encoded kernels' models train on one of a number of complementary disjoint subsets of the training data
+		* the number of subsets determines the speedup factor
+		* a choice of 2 to 5 subsets would give a 2 to 5 speedup factor while hopefully not making the training sets too small for the sub-classifiers to generalise
+		* each of the 2 to 10 sub-kernels could be trained on a randomly selected one of these 2 to 5 subsets
+		* note the number of sub-kernels also affects the run time
+			* for m being the number of sub-kernels, n being the number of samples, and k being the number of subsets the samples to split into,
+				the number of kernel evaluations to train the ensemble is m*((n/k)^2)/2 == m/(k^2) * (n^2)/2  == m/(k^2) * (the evaluations for a single classifier)
+			* therefore in order to have any speedup, m must be less than k^2
+			* the speedup factor is (k^2)/m. (eg. for k=5, m=10, it would be 25/10 or 2.5 times faster)
+	* create an ensemble of the trained models and classify the test data as a metric
+	* the advantage over using a single classifier is the potentially higher accuracy and the lower run time
+	* if the accuracy is noticeably better, then the number of kernels could be increased without splitting the data into too many subsets
+	* the chromosomes can encode a data encoding function for each gate to allow variation between the individual kernels, which should result in better accuracy
+		(see https://www.researchgate.net/publication/300896635_SVM_Ensembles_Are_Better_When_Different_Kernel_Types_Are_Combined)
+
+
+IMPLEMENTED:
+* cross-validation in metrics during genetic training
+	can compare run time and accuracy with original method (run time is surprisingly only +-10% longer with shorter method)
+* alternate / additional fitness functions for genetic training (classifier margin size)
+	can compare accuracies and run time with original method
