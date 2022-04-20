@@ -264,7 +264,7 @@ end
 "Optimizes a kernel to maximise classification accuracy. max_evaluations determines the maximum number of
 parameter tests the optimizer can perform. In this case that is the number of times the kernel can be
 used to train and test a model."
-function optimize_kernel_accuracy(parameterised_kernel, initial_parameters, dataset; max_evaluations=300, seed=22)
+function optimize_kernel_accuracy(parameterised_kernel, initial_parameters, dataset; max_evaluations=300, seed=22, verbose=false)
     # get the training data from the dataset
     samples, labels = dataset.training_samples, dataset.training_labels
     
@@ -304,7 +304,9 @@ function optimize_kernel_accuracy(parameterised_kernel, initial_parameters, data
 
         # record the objective value for convergence analysis
         push!(objective_history, objective)
-        println("Evaluation: $evaluation_counter\nAccuracy: $objective\nParameters: $parameters\n")
+        if verbose
+            println("Evaluation: $evaluation_counter\nAccuracy: $objective\nParameters: $parameters\n")
+        end
         return objective
     end
     opt.max_objective = progress_objective
@@ -314,4 +316,44 @@ function optimize_kernel_accuracy(parameterised_kernel, initial_parameters, data
     (final_objective_value, final_parameters, return_code) = optimize(opt, initial_parameters)
     # return the relevant values
     return (final_parameters, final_objective_value, opt.numevals, objective_history, return_code)
+end
+
+#TODO: parallelise this and remove intermediate printing with a flag argument when calling optimize_kernel_accuracy
+"Takes a vector of individuals and trains them using parameter
+based training to better classify the dataset. Returns the trained
+parameter values and fitness evaluation histories of the individuals."
+function population_parameterised_training(population, dataset; qubit_count=6, depth=6, max_evaluations=60, seed=22)
+    #NOTE: max_evaluations specifies the maximum fitness evaluations per individual, not over the whole
+    #population.
+    
+    function process_individual(individual)
+        parameterised_kernel, initial_parameters = decode_chromosome_parameterised_yao(chromosome,
+                                                                                       dataset.feature_count,
+                                                                                       qubit_count,
+                                                                                       depth)
+        optimized_parameters, final_objective, num_evals, history, return_code = optimize_kernel_accuracy(parameterised_kernel,
+                                                                                                          initial_parameters,
+                                                                                                          dataset;
+                                                                                                          max_evaluations=max_evaluations,
+                                                                                                          seed=seed)
+        
+        if return_code == :MAXEVAL_REACHED
+            return optimized_parameters, history
+        else
+            # in the case of failed optimization, just record repeated copies of the initial objective
+            # to represent no improvement
+            return optimized_parameters, fill(final_objective, max_evaluations)
+        end
+    end
+    
+    #TODO: parallelise this loop
+    population_final_parameters::Vector{Vector{Float64}} = []
+    histories::Vector{Vector{Float64}} = []
+    for c in population
+        params, hist = process_individual(c)
+        push!(population_final_parameters, params)
+        push!(histories, hist)
+    end
+
+    return population_final_parameters, histories
 end

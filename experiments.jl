@@ -13,7 +13,7 @@ include("tests.jl")
 using PyCall
 
 # TODO: add additional genetic termination criteria such as minimum fitness
-# or improvement. look at the reference paper for options they list.
+# or rate of improvement. look at the reference paper for options they list.
 # this isn't a requirement but would conveniently make the experiments
 # run faster. it could be useful in analysis to show which methods
 # converge sooner. alternatively implementing objective tracking could be
@@ -118,20 +118,22 @@ def genetic_solve_dataset_classification(samples, labels, feature_count, populat
                                    depth=depth,
                                    problem_data=(samples,labels),
                                    seed=seed)
-    termination = get_termination("n_gen", 5000)
+    termination = get_termination("n_gen", 1200)
     algorithm.setup(problem, seed=seed, termination=termination, verbose=True)
+    fitness_history = []
     while algorithm.has_next():
         algorithm.next()
+        fitness_history.append(algorithm.result().F)
     result = algorithm.result()
     
     solutions = result.X
     fitnesses = result.F
-    return solutions, fitnesses, result
+    return solutions, fitnesses, result, fitness_history
 """
 
 "Generic experiment function."
 function genetic_solve_dataset_classification(dataset, population_evaluator; qubit_count=6, depth=6, seed=22)
-    population_matrix, fitness_matrix, pymoo_result = py"genetic_solve_dataset_classification"(dataset.training_samples,
+    population_matrix, fitness_matrix, pymoo_result, fitness_history = py"genetic_solve_dataset_classification"(dataset.training_samples,
                                                                                                dataset.training_labels,
                                                                                                dataset.feature_count,
                                                                                                population_evaluator,
@@ -140,7 +142,7 @@ function genetic_solve_dataset_classification(dataset, population_evaluator; qub
                                                                                                seed=seed)
     row(m, i) = @view m[i, :]
     to_rows(matrix) = [row(matrix, i) for i in 1:size(matrix)[1]]
-    return (to_rows(population_matrix), to_rows(fitness_matrix), pymoo_result)
+    return (to_rows(population_matrix), to_rows(fitness_matrix), pymoo_result, map(to_rows, fitness_history))
 end
 
 "Allows partially specifying arguments to a function, and returns a function that
@@ -204,9 +206,7 @@ function moons_parameterised_genetic_combination_experiment(;seed=22)
     to_rows(matrix) = [row(matrix, i) for i in 1:size(matrix)[1]]
 
     # perform genetic optimization
-    (population, fitnesses, pymoo_result) = solve_moons_classification(;seed=seed)
-    population = to_rows(population)
-    fitnesses = to_rows(fitnesses)
+    (population, fitnesses, pymoo_result, fit_history) = solve_moons_classification(;seed=seed)
 
     highest_accuracy_individual = population[best_individual_index(population, fitnesses)]
 
@@ -223,3 +223,19 @@ end
 #TODO: 1. create a general function for testing a kernel on the validation part of a data set
 # 2. create a dispatch version that takes a chromosome and calls the first version with its kernel
 # 3. create a dispatch version that takes a chromosome and parameters and calls the first version with the parameters substituted into its kernel
+
+function parameter_training_experiment(dataset::Dataset; qubit_count=6, depth=6, max_evaluations=60, seed=22)
+    # load the genetic training results for the given data set
+    population, fitnesses, genetic_fitness_histories = load_results(dataset.name, "accuracy")
+    # train the population with parameter based training
+    population_optimized_parameters, population_parameter_objective_histories = population_parameterised_training(population,
+                                                                                                        dataset;
+                                                                                                        qubit_count=qubit_count,
+                                                                                                        depth=depth,
+                                                                                                        max_evaluations=max_evaluations,
+                                                                                                        seed=seed)
+    # return optimized parameters for use,
+    # return genetic fitness histories for graphing,
+    # and return parameter training objective histories for graphing
+    return population_optimized_parameters, genetic_fitness_histories, population_parameter_objective_histories
+end

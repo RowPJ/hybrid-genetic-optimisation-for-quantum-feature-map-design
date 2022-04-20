@@ -34,9 +34,6 @@ using Yao, CuYao, GPUArrays
 using Distributed, Dagger
 using PyCall
 using ScikitLearn
-# for speeding up fitness evaluation by not recomputing known fitnesses too much
-using Memoize
-using LRUCache
 
 # import SVC class from python
 @sk_import svm: (SVC) # equivalent to "from sklearn.svm import SVC" in python
@@ -367,7 +364,7 @@ function weighted_size_metric(size_metric, accuracy)
 end
 
 "This struct can be used to group together
-all data needed to apply a trained classifier
+all state needed to apply a trained classifier
 to new data."
 struct TrainedModel
     classifier::PyObject
@@ -423,6 +420,7 @@ function accuracy_metric_yao(model_struct, problem_data, kernel=model_struct.ker
     return accuracy
 end
 
+
 # NOTE/TODO: could use average of margin sizes of each test
 # data point to allow for gradual improvement of the metric,
 # although optimizing the minimum also works
@@ -443,8 +441,7 @@ function margin_width_metric_yao(model_struct, problem_data)
     return minimum(confidences)
 end
 
-#@memoize LRU{Tuple{Any, Any, Any, Any, Any, Any}, Any}(maxsize=200) 
-#@memoize Dict() 
+
 "Calculates fitness of a single solution."
 function fitness_yao(chromosome, feature_count, qubit_count, depth, problem_data, seed=22)
     # create the kernel block constructor from the chromosome and circuit details
@@ -460,6 +457,91 @@ function fitness_yao(chromosome, feature_count, qubit_count, depth, problem_data
     return (acc, weighted_size_metric(sm, acc), margin_metric)
 end
 
+using SymEngine
+using YaoSym
+"Calculates fitness of a single solution. Evaluates the kernel once symbolically to save time."
+function fitness_yao_symbolic(chromosome, feature_count, qubit_count, depth, problem_data, seed=22)
+    # create the kernel block constructor from the chromosome and circuit details
+    kernel = decode_chromosome_yao(chromosome, feature_count, qubit_count, depth)
+    # substitute symbolic feature values into the circuit
+    data_1 = [SymEngine.symbols("x_$i") for i in 1:feature_count]
+    data_2 = [SymEngine.symbols("y_$i") for i in 1:feature_count]
+    symbolic_kernel_circuit = kernel(data_1, data_2)
+
+    # create a symbolic-compatible register
+    register = zero_state(Basic, qubit_count)
+
+    # run the symbolic circuit
+    register |> symbolic_kernel_circuit
+
+    # get the zero state amplitude as a symbolic expression
+    # in terms of the symbolic feature values
+    zero_amplitude_expression = state(register)[1,1]
+    # compile the expression into a function returning the definite zero amplitude
+    # when given feature values
+    lambdified_fn = eval(Expr(:function,
+                         Expr(:call, gensym(), map(Symbol,vcat(data_1, data_2))...),
+                         convert(Expr, zero_amplitude_expression)))
+    fast_zero_amplitude_calculator(args...) = Base.invokelatest(lambdified_fn, args...)
+    # use that to define a function directly producing the kernel output
+    fast_kernel_function(d1, d2) = real(fast_zero_amplitude_calculator(d1..., d2...))
+
+    # hacked together symbolic-compatible local versions of global functions
+    function compute_symmetric_kernel_matrix_symbolic(training_samples)
+        dimension = length(training_samples)
+        result = zeros(Float64, (dimension, dimension))
+        @inbounds for (i, s1) in enumerate(training_samples)
+            result[i,i] = 1.0
+            @inbounds for j in 1:(i-1)
+                s2 = training_samples[j]
+                output = fast_kernel_function(s1, s2)
+                result[i,j] = output
+                result[j,i] = output
+            end
+        end
+        return result
+    end
+    function compute_kernel_matrix_symbolic(training_samples, other_samples)
+        if training_samples == other_samples
+            return compute_symmetric_kernel_matrix_symbolic(training_samples)
+        end
+        M = length(other_samples)
+        N = length(training_samples)
+        result = zeros(Float64, (M, N))
+        @inbounds for (j, s2) in enumerate(training_samples)
+            for (i, s1) in enumerate(other_samples)
+                output = fast_kernel_function(s1, s2)
+                result[i,j] = output
+            end
+        end
+        return result
+    end
+    function train_model_symbolic(problem_data, seed=22)
+        np.random.seed(seed)
+        (train_samples, test_samples, train_labels, test_labels) = problem_data
+        gram_matrix = compute_kernel_matrix_symbolic(train_samples, train_samples)
+        model = SVC(kernel="precomputed")
+        fit!(model, gram_matrix, train_labels)
+        return TrainedModel(model, kernel, gram_matrix, train_samples)
+    end
+    function accuracy_metric_yao_symbolic(model_struct, problem_data)
+        (train_samples, test_samples, train_labels, test_labels) = problem_data
+        test_sample_kernel_values =  compute_kernel_matrix_symbolic(train_samples, test_samples)
+        accuracy = score(model_struct.classifier, test_sample_kernel_values, test_labels)
+        return accuracy
+    end
+
+    # train a model using the fast kernel, problem data, and seed.
+    # the fast kernel should be advantageous since many kernel evaluations
+    # will be performed to construct the kernel matrix
+    model_struct = train_model_symbolic(problem_data, seed)
+    # calculate some fitness metrics
+    sm = size_metric(chromosome, qubit_count)
+    acc = accuracy_metric_yao_symbolic(model_struct, problem_data)
+    margin_metric = margin_width_metric_yao(model_struct, problem_data)
+    # return the metrics
+    return (acc, weighted_size_metric(sm, acc), margin_metric)
+end
 
 "Calculates fitness of a single solution."
 function fitness_yao_margin(chromosome, feature_count, qubit_count, depth, problem_data, seed=22)

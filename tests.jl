@@ -88,8 +88,8 @@ end
 
 "Version for when data points aren't supplied (uses symbolic values instead)."
 function draw_chromosome(chromosome::AbstractVector, feature_count, args...)
-    x = symbols("x[0:$feature_count]", real=true)
-    y = symbols("y[0:$feature_count]", real=true)
+    x = SymPy.symbols("x[0:$feature_count]", real=true)
+    y = SymPy.symbols("y[0:$feature_count]", real=true)
     kernel = decode_chromosome_yao(chromosome, feature_count, args...; plotting=true)(x, y)
     YaoPlots.plot(kernel)
 end
@@ -133,25 +133,38 @@ files."
 function save_results(dataset_string, metric_string, result_tuple)
     population = result_tuple[1]
     fitnesses = result_tuple[2]
+    fitness_history = result_tuple[4]
 
     row(m, i) = @view m[i, :]
     to_rows(matrix) = [row(matrix, i) for i in 1:size(matrix)[1]]
 
     population = to_rows(population)
     fitnesses = to_rows(fitnesses)
+    fitness_history = convert(Vector{Vector{Vector{Float64}}}, fitness_history)
 
     jldsave("./results/$dataset_string $metric_string final_population.jld2"; population)
     jldsave("./results/$dataset_string $metric_string final_fitnesses.jld2"; fitnesses)
+    jldsave("./results/$dataset_string $metric_string fitness_history.jld2"; fitness_history)
     
     nothing
+end
+
+function save_parameter_results(dataset_string, metric_string, results)
+    jldsave("./results/$dataset_string $metric_string parameter_training_results.jld2"; results)
+end
+function load_parameter_results(dataset_string, metric_string, results)
+    JLD2.load("./results/$dataset_string $metric_string parameter_training_results.jld2")["results"]
 end
 
 "Like save_results but takes only the first two arguments and returns the loaded
 population and fitness values."
 function load_results(dataset_string, metric_string)
     population = JLD2.load("./results/$dataset_string $metric_string final_population.jld2")["population"]
+    population = [p[1] for p in population]
     fitnesses = JLD2.load("./results/$dataset_string $metric_string final_fitnesses.jld2")["fitnesses"]
-    (population, fitnesses)
+    fitnesses = [f[1] for f in fitnesses]
+    fitness_history = JLD2.load("./results/$dataset_string $metric_string fitness_history.jld2")["fitness_history"]
+    (population, fitnesses, fitness_history)
 end
 
 
@@ -189,4 +202,9 @@ function accuracy_optimization_test(seed=22)
     # optimize kernel
     results = optimize_kernel_accuracy(parameterised_kernel, initial_parameters, cancer_dataset)
     return results
+end
+
+#TODO: complete this function
+function roc_curve_test()
+    pop, fit = load_results("digits", "accuracy")
 end

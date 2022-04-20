@@ -79,6 +79,7 @@ struct Dataset
     num_negative_training_instances
     num_positive_validation_instances
     num_negative_validation_instances
+    name
 end
 
 "Splits the data set into disjoint training and validation subsets.
@@ -201,7 +202,8 @@ function load_cancer(;num_train_samples=150, target_dimensionality=8)
                              num_positive(training_pair[2]),
                              num_negative(training_pair[2]),
                              num_positive(validation_pair[2]),
-                             num_negative(validation_pair[2]))
+                             num_negative(validation_pair[2]),
+                             "cancer")
     
     nothing
 end
@@ -245,7 +247,8 @@ function load_moons(;num_train_samples=150, seed=22, num_validation_samples=500)
                             num_positive(training_pair[2]),
                             num_negative(training_pair[2]),
                             num_positive(validation_pair[2]),
-                            num_negative(validation_pair[2]))
+                            num_negative(validation_pair[2]),
+                            "moons")
     
     nothing
 end
@@ -302,7 +305,8 @@ function load_iris(;num_train_samples=60)
                              num_positive(training_pair[2]),
                              num_negative(training_pair[2]),
                              num_positive(validation_pair[2]),
-                             num_negative(validation_pair[2]))
+                             num_negative(validation_pair[2]),
+                             "iris")
 
     nothing
 end
@@ -363,7 +367,8 @@ function load_digits(;num_train_samples=150, target_dimensionality=8)
                              num_positive(training_pair[2]),
                              num_negative(training_pair[2]),
                              num_positive(validation_pair[2]),
-                             num_negative(validation_pair[2]))
+                             num_negative(validation_pair[2]),
+                             "digits")
 
     nothing
 end
