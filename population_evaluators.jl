@@ -1,6 +1,8 @@
 #TODO: replace population evaluator functions with a generic version that takes
 # a preprocessing step and the fitness function to use on individuals
 
+using Dagger
+
 "Calculates fitness of a multiple solutions in parallel using circuit size
 and classification accuracy as fitness metrics."
 function evaluate_population_yao(population, feature_count,
@@ -88,6 +90,35 @@ function evaluate_population_yao_cross_validation(population, feature_count,
                                                                      depth,
                                                                      problem_data_converted,
                                                                      seed))
+    tasks = row_to_task.(population_converted)
+    # wait for the tasks to complete
+    metrics = fetch.(tasks)
+    # return the metrics for each individual
+    return metrics
+end
+
+function evaluate_population_yao_parameter_training_accuracy(population, feature_count,
+                                                             qubit_count, depth,
+                                                             problem_data, seed=22,
+                                                             max_parameter_training_evaluations=20) #parameter_iterations controls how many iterations of parameter based training to apply to each individual when evaluating their fitness
+    # extracts a view of ith row (the views share
+    # storage with the matrix m)
+    row(m, i) = @view m[i, :]
+    # takes a matrix and returns a vector of views of
+    # its rows
+    to_rows(matrix) = [row(matrix, i) for i in 1:size(matrix)[1]]
+    # convert population to an array of bool arrays
+    # rather than a matrix of bools
+    population_converted = to_rows(population)
+
+    # make a task for each individual's fitness
+    row_to_task = (row -> Dagger.@spawn fitness_yao_parameter_training_accuracy(row,
+                                                                                feature_count,
+                                                                                qubit_count,
+                                                                                depth,
+                                                                                problem_data,
+                                                                                seed,
+                                                                                max_parameter_training_evaluations))
     tasks = row_to_task.(population_converted)
     # wait for the tasks to complete
     metrics = fetch.(tasks)

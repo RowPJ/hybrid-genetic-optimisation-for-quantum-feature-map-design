@@ -88,10 +88,15 @@ end
 
 "Version for when data points aren't supplied (uses symbolic values instead)."
 function draw_chromosome(chromosome::AbstractVector, feature_count, args...)
+    kernel = decode_chromosome_yao(chromosome, feature_count, args...; plotting=true)
+    draw_kernel(kernel, feature_count)
+end
+
+function draw_kernel(kernel, feature_count)
     x = SymPy.symbols("x[0:$feature_count]", real=true)
     y = SymPy.symbols("y[0:$feature_count]", real=true)
-    kernel = decode_chromosome_yao(chromosome, feature_count, args...; plotting=true)(x, y)
-    YaoPlots.plot(kernel)
+    circuit = kernel(x, y)
+    YaoPlots.plot(circuit)
 end
 
 
@@ -152,7 +157,7 @@ end
 function save_parameter_results(dataset_string, metric_string, results)
     jldsave("./results/$dataset_string $metric_string parameter_training_results.jld2"; results)
 end
-function load_parameter_results(dataset_string, metric_string, results)
+function load_parameter_results(dataset_string, metric_string)
     JLD2.load("./results/$dataset_string $metric_string parameter_training_results.jld2")["results"]
 end
 

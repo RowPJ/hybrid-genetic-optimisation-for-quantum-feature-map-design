@@ -1,10 +1,10 @@
 using NLopt, LinearAlgebra
-using Dagger
 
 
-#TODO: investigate if dagger is slowing down kernel matrix calculation for smaller circuits.
-# if so, maybe have it only be used when circuit sizes are large enough to benefit and
-# use the single-threaded worker.jl compute_kernel_matrix function instead
+#NOTE: compute_kernel_matrix_parallel is no longer used since parameter training
+# now also takes place in the genetic optimization loop, which means threading
+# the matrix calculation probably just adds overhead unless the matrix size
+# grows a lot
 
 "Given a chromosome and circuit properties, returns two values. The first is a function
 accepting circuit parameters that itself returns a circuit when given feature values.
@@ -184,7 +184,7 @@ end
 "Calculates and returns the target alignment for the argument kernel
 on the given samples and corresponding labels."
 function kernel_target_alignment(kernel, samples, labels, oracle_matrix=create_oracle_matrix(labels)) # here oracle_matrix is the outer product of the label row vector and label column vector
-    gram_matrix = compute_kernel_matrix_parallel(kernel, samples)
+    gram_matrix = compute_kernel_matrix(kernel, samples, samples)
     return matrix_alignment(gram_matrix, oracle_matrix)
 end
 
@@ -264,18 +264,9 @@ end
 "Optimizes a kernel to maximise classification accuracy. max_evaluations determines the maximum number of
 parameter tests the optimizer can perform. In this case that is the number of times the kernel can be
 used to train and test a model."
-function optimize_kernel_accuracy(parameterised_kernel, initial_parameters, dataset; max_evaluations=300, seed=22, verbose=false)
-    # get the training data from the dataset
-    samples, labels = dataset.training_samples, dataset.training_labels
-    
-    (train_samples, test_samples, train_labels, test_labels) = py"train_test_split"(samples,
-                                                                                    labels,
-                                                                                    train_size=0.7,
-                                                                                    random_state=seed,
-                                                                                    shuffle=true)
-    
+function optimize_kernel_accuracy(parameterised_kernel, initial_parameters, problem_data; max_evaluations=300, seed=22, verbose=false)
 
-    problem_data = (train_samples, test_samples, train_labels, test_labels)
+    (train_samples, test_samples, train_labels, test_labels) = problem_data
 
     # ensure labels are positive and negative 1
     if !all(x -> x == 1 || x == -1, train_labels)
@@ -318,20 +309,43 @@ function optimize_kernel_accuracy(parameterised_kernel, initial_parameters, data
     return (final_parameters, final_objective_value, opt.numevals, objective_history, return_code)
 end
 
-#TODO: parallelise this and remove intermediate printing with a flag argument when calling optimize_kernel_accuracy
+#TODO: find a way to define the Dataset struct in all workers without duplicating the definition from datasets.jl
+#=
+function optimize_kernel_accuracy(parameterised_kernel, initial_parameters, dataset::Dataset; seed=22, kwargs...)
+    # get the training data from the dataset
+    samples, labels = dataset.training_samples, dataset.training_labels
+    (train_samples, test_samples, train_labels, test_labels) = py"train_test_split"(samples,
+                                                                                    labels,
+                                                                                    train_size=0.7,
+                                                                                    random_state=seed,
+                                                                                    shuffle=true)
+    problem_data = (train_samples, test_samples, train_labels, test_labels)
+    # forward to the method that takes the samples and labels directly
+    return optimize_kernel_accuracy(parameterised_kernel, initial_parameters, problem_data; kwargs...)
+end
+=#
+
+#TODO: try optimizing target alignment or average margin size instead of accuracy
+# so that there is more oppurtunity for improvement on smaller data sets.
+# accuracy converges too quickly for small data sets since outliers can make
+# up a relatively large percent of the data with small data sets
 "Takes a vector of individuals and trains them using parameter
 based training to better classify the dataset. Returns the trained
 parameter values and fitness evaluation histories of the individuals."
-function population_parameterised_training(population, dataset; qubit_count=6, depth=6, max_evaluations=60, seed=22)
+function population_parameterised_training(population, dataset, feature_count; qubit_count=6, depth=6, max_evaluations=60, seed=22, metric_type="accuracy")
     #NOTE: max_evaluations specifies the maximum fitness evaluations per individual, not over the whole
     #population.
+    #NOTE: although the argument name is dataset, it takes a value of problem_data form
+
+    metrics_to_target_optimizers = Dict("accuracy"=>optimize_kernel_accuracy, "target_alignment"=>optimize_kernel_target_alignment)
+    target_optimizer = metrics_to_target_optimizers[metric_type]
     
-    function process_individual(individual)
+    function process_individual(chromosome)
         parameterised_kernel, initial_parameters = decode_chromosome_parameterised_yao(chromosome,
-                                                                                       dataset.feature_count,
+                                                                                       feature_count,
                                                                                        qubit_count,
                                                                                        depth)
-        optimized_parameters, final_objective, num_evals, history, return_code = optimize_kernel_accuracy(parameterised_kernel,
+        optimized_parameters, final_objective, num_evals, history, return_code = target_optimizer(parameterised_kernel,
                                                                                                           initial_parameters,
                                                                                                           dataset;
                                                                                                           max_evaluations=max_evaluations,
@@ -341,8 +355,8 @@ function population_parameterised_training(population, dataset; qubit_count=6, d
             return optimized_parameters, history
         else
             # in the case of failed optimization, just record repeated copies of the initial objective
-            # to represent no improvement
-            return optimized_parameters, fill(final_objective, max_evaluations)
+            # to represent no improvement and return the initial parameter values
+            return initial_parameters, fill(final_objective, max_evaluations)
         end
     end
     

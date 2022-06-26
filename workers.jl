@@ -617,6 +617,26 @@ function fitness_yao_cross_validation(chromosome, feature_count, qubit_count, de
     return (mean(metric_vectors[1]), mean(metric_vectors[2]), mean(metric_vectors[3]))
 end
 
+function fitness_yao_parameter_training_accuracy(chromosome, feature_count, qubit_count, depth,
+                                                 problem_data, seed=22, max_parameter_training_evaluations=20)
+    # create the parameterised kernel block constructor from the chromosome and circuit details
+    parameterised_kernel, initial_parameters = decode_chromosome_parameterised_yao(chromosome, feature_count, qubit_count, depth)
+    
+    #_ is to ignore return objective value history
+    final_parameters, final_objective_value, num_evals, _, return_code = optimize_kernel_accuracy(parameterised_kernel, initial_parameters, problem_data; seed=seed, max_evaluations=max_parameter_training_evaluations)
+
+    # create the kernel circuit constructor for 2 data points by substituting the final parameters
+    final_kernel = parameterised_kernel(final_parameters)
+
+    # train a model using the kernel, problem data, and seed
+    model_struct = train_model(problem_data, final_kernel, seed)
+    # calculate some fitness metrics
+    sm = size_metric(chromosome, qubit_count)
+    acc = accuracy_metric_yao(model_struct, problem_data, final_kernel)
+    margin_metric = margin_width_metric_yao(model_struct, problem_data)
+    # return the metrics
+    return (acc, weighted_size_metric(sm, acc), margin_metric)
+end
 # NOTE:
 # Workers could also be configured to compute with multiple GPUs.
 # By using the CUDA.jl package ("using CUDA"), the "device!" function
@@ -624,3 +644,6 @@ end
 # the default for running tasks. could try running gpu tasks with
 # "device!(id) do ... end"  on each worker, where id is the GPU's index,
 # with GPU's indexed from 0
+
+#include this file so workers can optimize parameters during genetic optimization process
+include("parameter_optimization.jl")

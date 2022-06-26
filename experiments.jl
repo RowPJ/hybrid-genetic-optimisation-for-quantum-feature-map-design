@@ -2,10 +2,10 @@
 # It loads most/all of the other files and contains the high level
 # functions that depend on the other parts of the code.
 
-include("worker_management.jl")
-include("population_evaluators.jl")
-include("nsga2.jl")
 include("datasets.jl")
+include("population_evaluators.jl")
+include("worker_management.jl")
+include("nsga2.jl")
 include("parameter_optimization.jl")
 include("graphing.jl")
 include("tests.jl")
@@ -166,14 +166,15 @@ function generate_genetic_metric_variation_experiment_functions(dataset)
     acc_experiment = timed(curry(genetic_solve_dataset_classification, dataset, evaluate_population_yao))
     margin_experiment = timed(curry(genetic_solve_dataset_classification, dataset, evaluate_population_yao_margin_metric))
     cross_validation_experiment = timed(curry(genetic_solve_dataset_classification, dataset, evaluate_population_yao_cross_validation))
-    return (acc_experiment, margin_experiment, cross_validation_experiment)
+    acc_genetic_and_parameter_training_experiment = timed(curry(genetic_solve_dataset_classification, dataset, evaluate_population_yao_parameter_training_accuracy))
+    return (acc_experiment, margin_experiment, cross_validation_experiment, acc_genetic_and_parameter_training_experiment)
 end
 
 # define experiment functions for the convenience of running specific experiments individually
-solve_moons_accuracy, solve_moons_margin, solve_moons_cross_validation = generate_genetic_metric_variation_experiment_functions(moons_dataset)
-solve_cancer_accuracy, solve_cancer_margin, solve_cancer_cross_validation = generate_genetic_metric_variation_experiment_functions(cancer_dataset)
-solve_iris_accuracy, solve_iris_margin, solve_iris_cross_validation = generate_genetic_metric_variation_experiment_functions(iris_dataset)
-solve_digits_accuracy, solve_digits_margin, solve_digits_cross_validation = generate_genetic_metric_variation_experiment_functions(digits_dataset)
+solve_moons_accuracy, solve_moons_margin, solve_moons_cross_validation, solve_moons_genetic_and_parameter_training_accuracy = generate_genetic_metric_variation_experiment_functions(moons_dataset)
+solve_cancer_accuracy, solve_cancer_margin, solve_cancer_cross_validation, solve_cancer_genetic_and_parameter_training_accuracy = generate_genetic_metric_variation_experiment_functions(cancer_dataset)
+solve_iris_accuracy, solve_iris_margin, solve_iris_cross_validation, solve_iris_genetic_and_parameter_training_accuracy = generate_genetic_metric_variation_experiment_functions(iris_dataset)
+solve_digits_accuracy, solve_digits_margin, solve_digits_cross_validation, solve_digits_genetic_and_parameter_training_accuracy = generate_genetic_metric_variation_experiment_functions(digits_dataset)
 
 
 "Given a list of population individuals and a list of their corresponding fitness values,
@@ -182,18 +183,22 @@ or its substitute."
 function best_individual_index(population, fitnesses)
     # get the highest-accuracy individual
     highest_accuracy = fitnesses[1][1]
-    highest_accuracy_index = 1
+    smallest_size = fitnesses[1][2]
+    result_index = 1
     for i in 2:length(population)
         next_accuracy = fitnesses[i][1]
+        next_size = fitnesses[i][2]
         # remember, use < to compare if an accuracy value is better, since
-        # more negative fitness corresponds to higher accuracy as the metrics
-        # were all negated to make the minimizing optimizer into a maximizer
-        if next_accuracy < highest_accuracy
+        # more negative fitness corresponds to higher accuracy as the accuracy
+        # metrics were all negated to make the minimizing optimizer into a maximizer
+        # Conditional check passes if accuracy is better or if accuracy is the same but size is better
+        if next_accuracy < highest_accuracy || (next_accuracy == highest_accuracy && next_size < smallest_size)
             highest_accuracy = next_accuracy
-            highest_accuracy_index = i
+            smallest_size = next_size
+            result_index = i
         end
     end
-    return highest_accuracy_index
+    return result_index
 end
 
 #TODO: finish a generalised version of this function definition that works with an arbitrary data set
@@ -224,18 +229,24 @@ end
 # 2. create a dispatch version that takes a chromosome and calls the first version with its kernel
 # 3. create a dispatch version that takes a chromosome and parameters and calls the first version with the parameters substituted into its kernel
 
-function parameter_training_experiment(dataset::Dataset; qubit_count=6, depth=6, max_evaluations=60, seed=22)
+function parameter_training_experiment(dataset::Dataset; qubit_count=6, depth=6, max_evaluations=60, seed=22, genetic_metric_type="accuracy", parameter_metric_type="accuracy")
     # load the genetic training results for the given data set
-    population, fitnesses, genetic_fitness_histories = load_results(dataset.name, "accuracy")
+    population, fitnesses, genetic_fitness_histories = load_results(dataset.name, genetic_metric_type)
     # train the population with parameter based training
     population_optimized_parameters, population_parameter_objective_histories = population_parameterised_training(population,
                                                                                                         dataset;
                                                                                                         qubit_count=qubit_count,
                                                                                                         depth=depth,
                                                                                                         max_evaluations=max_evaluations,
-                                                                                                        seed=seed)
+                                                                                                        seed=seed,
+                                                                                                        metric_type=parameter_metric_type)
     # return optimized parameters for use,
     # return genetic fitness histories for graphing,
     # and return parameter training objective histories for graphing
     return population_optimized_parameters, genetic_fitness_histories, population_parameter_objective_histories
+end
+
+# run a bunch of experiments, saving results
+function main()
+    
 end

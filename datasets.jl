@@ -13,6 +13,7 @@ py"""
 from sklearn.datasets import make_moons, load_iris, load_breast_cancer, load_digits
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
+import numpy as np
 
 def extract_binary_classes(feature_array, label_array):
     #Takes a numpy array of feature vectors and a numpy array of labels
@@ -381,3 +382,9 @@ function load_all_datasets()
 end
 
 load_all_datasets()
+
+#allows retrieving a dataset directly from the name
+dataset_map = Dict("moons"=>moons_dataset,
+                    "digits"=>digits_dataset,
+                    "cancer"=>cancer_dataset,
+                    "iris"=>iris_dataset)

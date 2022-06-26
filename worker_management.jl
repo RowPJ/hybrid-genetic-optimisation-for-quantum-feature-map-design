@@ -45,7 +45,7 @@ end
 # processes (or threading being used)
 ENV[REGISTER_VARIABLE] = CPU_REGISTER_TYPE
 # create workers
-target_worker_counts = (12, 0)
+target_worker_counts = (8, 0)
 add_local_cpu_workers(target_worker_counts[1] - nprocs() + 1) # +1 since nprocs() includes the main process
 
 # create remote gpu workers on local machine
