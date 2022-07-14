@@ -366,6 +366,8 @@ function generate_graphs(seed=22)
             savefig(figure, "./diagrams/$dataset_name accuracy best_individual_decision_boundary.pdf")
         end
 
+        println("Best individual metric values ($dataset_name approach 1):", fitnesses[best_chromosome_index])
+
         # Step 1.2: perform parameter training to get 2nd approach results (maybe separate training into experiments.jl and just load the results here?)
         println("Step 1.2: Approach 2")
         population_final_parameters, parameter_training_fitness_history = population_parameterised_training(population, problem_data, dataset.feature_count; qubit_count=6, depth=6, max_evaluations=300, seed=seed, metric_type="accuracy")
@@ -433,6 +435,8 @@ function generate_graphs(seed=22)
             savefig(figure, "./diagrams/$dataset_name accuracy trained best_individual_decision_boundary.pdf")
         end
 
+        println("Best individual metric values ($dataset_name approach 2):", fitnesses_2[best_chromosome_index_2])
+
         # step 2
         println("Step 2: Approach 3")
         population_3, fitnesses_3, history_3 = load_results(dataset_name, "accuracy_parameter_training")
@@ -474,5 +478,7 @@ function generate_graphs(seed=22)
             figure = decision_boundary(model_struct_3, dataset)
             savefig(figure, "./diagrams/$dataset_name accuracy training in fitness best_individual_decision_boundary.pdf")
         end
+
+        println("Best individual metric values ($dataset_name approach 3):", fitnesses_3[best_chromosome_index_3])
     end
 end
