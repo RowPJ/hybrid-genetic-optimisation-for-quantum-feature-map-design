@@ -644,6 +644,27 @@ end
 # the default for running tasks. could try running gpu tasks with
 # "device!(id) do ... end"  on each worker, where id is the GPU's index,
 # with GPU's indexed from 0
+function fitness_yao_parameter_training_target_alignment(chromosome, feature_count, qubit_count, depth,
+                                                         problem_data, seed=22, max_parameter_training_evaluations=20)
+    # create the parameterised kernel block constructor from the chromosome and circuit details
+    parameterised_kernel, initial_parameters = decode_chromosome_parameterised_yao(chromosome, feature_count, qubit_count, depth)
+
+    #_ is to ignore return objective value history
+    final_parameters, final_objective_value, num_evals, _, return_code = optimize_kernel_target_alignment(parameterised_kernel, initial_parameters, problem_data; seed=seed, max_evaluations=max_parameter_training_evaluations)
+
+    # create the kernel circuit constructor for 2 data points by substituting the final parameters
+    final_kernel = parameterised_kernel(final_parameters)
+
+    # train a model using the kernel, problem data, and seed
+    model_struct = train_model(problem_data, final_kernel, seed)
+    # calculate some fitness metrics
+    sm = size_metric(chromosome, qubit_count)
+    acc = accuracy_metric_yao(model_struct, problem_data, final_kernel)
+    margin_metric = margin_width_metric_yao(model_struct, problem_data)
+    final_alignment = final_objective_value # just save for easily accessing later without retraining models
+    # return the metrics
+    return (acc, weighted_size_metric(sm, acc), margin_metric, final_alignment)
+end
 
 #include this file so workers can optimize parameters during genetic optimization process
 include("parameter_optimization.jl")

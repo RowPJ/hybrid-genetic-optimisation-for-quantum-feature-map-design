@@ -172,7 +172,8 @@ function load_results(dataset_string, metric_string)
     (population, fitnesses, fitness_history)
 end
 
-
+###OUTDATED, expects to send a data set struct to optimize_kernel_target_alignment rather than a problem_data tuple
+#=
 "Use to test optimizing kernel target alignment.
 Depends on cancer accuracy results with 4 features,
 6 qubits, and depth 6 existing for them to be loaded."
@@ -191,6 +192,7 @@ function target_alignment_optimization_test(seed=22)
     results = optimize_kernel_target_alignment(parameterised_kernel, initial_parameters, cancer_dataset)
     return results
 end
+=#
 
 "Like target_alignment_optimization_test, but tests optimizing parameters for test set classification accuracy."
 function accuracy_optimization_test(seed=22)

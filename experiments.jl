@@ -167,14 +167,15 @@ function generate_genetic_metric_variation_experiment_functions(dataset)
     margin_experiment = timed(curry(genetic_solve_dataset_classification, dataset, evaluate_population_yao_margin_metric))
     cross_validation_experiment = timed(curry(genetic_solve_dataset_classification, dataset, evaluate_population_yao_cross_validation))
     acc_genetic_and_parameter_training_experiment = timed(curry(genetic_solve_dataset_classification, dataset, evaluate_population_yao_parameter_training_accuracy))
-    return (acc_experiment, margin_experiment, cross_validation_experiment, acc_genetic_and_parameter_training_experiment)
+    acc_genetic_and_parameter_training_target_alignment_experiment = timed(curry(genetic_solve_dataset_classification, dataset, evaluate_population_yao_parameter_training_target_alignment))
+    return (acc_experiment, margin_experiment, cross_validation_experiment, acc_genetic_and_parameter_training_experiment, acc_genetic_and_parameter_training_target_alignment_experiment)
 end
 
 # define experiment functions for the convenience of running specific experiments individually
-solve_moons_accuracy, solve_moons_margin, solve_moons_cross_validation, solve_moons_genetic_and_parameter_training_accuracy = generate_genetic_metric_variation_experiment_functions(moons_dataset)
-solve_cancer_accuracy, solve_cancer_margin, solve_cancer_cross_validation, solve_cancer_genetic_and_parameter_training_accuracy = generate_genetic_metric_variation_experiment_functions(cancer_dataset)
-solve_iris_accuracy, solve_iris_margin, solve_iris_cross_validation, solve_iris_genetic_and_parameter_training_accuracy = generate_genetic_metric_variation_experiment_functions(iris_dataset)
-solve_digits_accuracy, solve_digits_margin, solve_digits_cross_validation, solve_digits_genetic_and_parameter_training_accuracy = generate_genetic_metric_variation_experiment_functions(digits_dataset)
+solve_moons_accuracy, solve_moons_margin, solve_moons_cross_validation, solve_moons_genetic_and_parameter_training_accuracy, solve_moons_genetic_and_parameter_training_target_alignment = generate_genetic_metric_variation_experiment_functions(moons_dataset)
+solve_cancer_accuracy, solve_cancer_margin, solve_cancer_cross_validation, solve_cancer_genetic_and_parameter_training_accuracy, solve_cancer_genetic_and_parameter_training_target_alignment = generate_genetic_metric_variation_experiment_functions(cancer_dataset)
+solve_iris_accuracy, solve_iris_margin, solve_iris_cross_validation, solve_iris_genetic_and_parameter_training_accuracy, solve_iris_genetic_and_parameter_training_target_alignment = generate_genetic_metric_variation_experiment_functions(iris_dataset)
+solve_digits_accuracy, solve_digits_margin, solve_digits_cross_validation, solve_digits_genetic_and_parameter_training_accuracy, solve_digits_genetic_and_parameter_training_target_alignment = generate_genetic_metric_variation_experiment_functions(digits_dataset)
 
 
 "Given a list of population individuals and a list of their corresponding fitness values,
@@ -201,6 +202,7 @@ function best_individual_index(population, fitnesses)
     return result_index
 end
 
+#=
 #TODO: finish a generalised version of this function definition that works with an arbitrary data set
 "Trains circuits genetically to have high accuracy, then replaces the genetically-determined
 proportionality parameters with trainable real-valued parameters and trains them to maximise
@@ -224,11 +226,12 @@ function moons_parameterised_genetic_combination_experiment(;seed=22)
     samples, labels = make_moons(n_samples=sample_count,
                                  random_state=seed)
 end
-
+=#
 #TODO: 1. create a general function for testing a kernel on the validation part of a data set
 # 2. create a dispatch version that takes a chromosome and calls the first version with its kernel
 # 3. create a dispatch version that takes a chromosome and parameters and calls the first version with the parameters substituted into its kernel
 
+#=
 function parameter_training_experiment(dataset::Dataset; qubit_count=6, depth=6, max_evaluations=60, seed=22, genetic_metric_type="accuracy", parameter_metric_type="accuracy")
     # load the genetic training results for the given data set
     population, fitnesses, genetic_fitness_histories = load_results(dataset.name, genetic_metric_type)
@@ -245,8 +248,51 @@ function parameter_training_experiment(dataset::Dataset; qubit_count=6, depth=6,
     # and return parameter training objective histories for graphing
     return population_optimized_parameters, genetic_fitness_histories, population_parameter_objective_histories
 end
+=#
 
 # run a bunch of experiments, saving results
-function main()
-    
+function main(seed=22)
+    @time begin
+        #=
+        # first run all experiments of genetic training, saving results
+        for (fn, name) in zip([solve_moons_accuracy,
+                    solve_cancer_accuracy,
+                    solve_iris_accuracy,
+                    solve_digits_accuracy],
+                    ["moons",
+                    "cancer",
+                    "iris",
+                    "digits"])
+              results = fn(;seed=seed)
+            println("Finished $name accuracy")
+            save_results(name, "accuracy", results)
+        end
+        # second, run all experiments with the genetic training including parameter optimization for maximizing accuracy
+        for (fn, name) in zip([solve_moons_genetic_and_parameter_training_accuracy,
+                    solve_cancer_genetic_and_parameter_training_accuracy,
+                    solve_iris_genetic_and_parameter_training_accuracy,
+                    solve_digits_genetic_and_parameter_training_accuracy],
+                    ["moons",
+                   "cancer",
+                   "iris",
+                   "digits"])
+            results = fn(;seed=seed)
+            println("Finished $name accuracy with parameter training")
+            save_results(name, "accuracy_parameter_training", results)
+        end
+        =#
+        # third, run all experiments with the genetic training including parameter optimization for maximizing target alignment
+        for (fn, name) in zip([solve_moons_genetic_and_parameter_training_target_alignment,
+                    solve_cancer_genetic_and_parameter_training_target_alignment,
+                    solve_iris_genetic_and_parameter_training_target_alignment,
+                    solve_digits_genetic_and_parameter_training_target_alignment],
+                    ["moons",
+                    "cancer",
+                    "iris",
+                    "digits"])
+            results = fn(;seed=seed)
+            println("Finished $name accuracy with parameter training for target alignment")
+            save_results(name, "alignment_parameter_training", results)
+        end
+    end
 end

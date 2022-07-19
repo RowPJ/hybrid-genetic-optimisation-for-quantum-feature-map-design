@@ -100,7 +100,7 @@ end
 function evaluate_population_yao_parameter_training_accuracy(population, feature_count,
                                                              qubit_count, depth,
                                                              problem_data, seed=22,
-                                                             max_parameter_training_evaluations=20) #parameter_iterations controls how many iterations of parameter based training to apply to each individual when evaluating their fitness
+                                                             max_parameter_training_evaluations=100) #parameter_iterations controls how many iterations of parameter based training to apply to each individual when evaluating their fitness
     # extracts a view of ith row (the views share
     # storage with the matrix m)
     row(m, i) = @view m[i, :]
@@ -119,6 +119,46 @@ function evaluate_population_yao_parameter_training_accuracy(population, feature
                                                                                 problem_data,
                                                                                 seed,
                                                                                 max_parameter_training_evaluations))
+    tasks = row_to_task.(population_converted)
+    # wait for the tasks to complete
+    metrics = fetch.(tasks)
+    # return the metrics for each individual
+    return metrics
+end
+
+function evaluate_population_yao_parameter_training_target_alignment(population, feature_count,
+                                                                     qubit_count, depth,
+                                                                     problem_data, seed=22,
+                                                                     max_parameter_training_evaluations=100) #parameter_iterations controls how many iterations of parameter based training to apply to each individual when evaluating their fitness
+    # extracts a view of ith row (the views share
+    # storage with the matrix m)
+    row(m, i) = @view m[i, :]
+    # takes a matrix and returns a vector of views of
+    # its rows
+    to_rows(matrix) = [row(matrix, i) for i in 1:size(matrix)[1]]
+    # convert population to an array of bool arrays
+    # rather than a matrix of bools
+    population_converted = to_rows(population)
+
+    # ensure labels are 1 and -1 for target alignment definition to work
+    (_, _, train_labels, test_labels) = problem_data
+    if !all(x -> x == 1 || x == -1, train_labels)
+        println(train_labels)
+        error("Some training set labels from pymoo are not -1 or 1.")
+    end
+    if !all(x -> x == 1 || x == -1, test_labels)
+        println(test_labels)
+        error("Some testing set labels from pymoo are not -1 or 1.")
+    end
+
+    # make a task for each individual's fitness
+    row_to_task = (row -> Dagger.@spawn fitness_yao_parameter_training_target_alignment(row,
+                                                                                        feature_count,
+                                                                                        qubit_count,
+                                                                                        depth,
+                                                                                        problem_data,
+                                                                                        seed,
+                                                                                        max_parameter_training_evaluations))
     tasks = row_to_task.(population_converted)
     # wait for the tasks to complete
     metrics = fetch.(tasks)
