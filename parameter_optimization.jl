@@ -196,25 +196,17 @@ end
 
 "Optimizes a kernel to maximise kernel-target alignment. maxeval determines the maximum number of
 target alignment calls the optimizer can make."
-function optimize_kernel_target_alignment(parameterised_kernel, initial_parameters, dataset; max_evaluations=300, seed=22)
+function optimize_kernel_target_alignment(parameterised_kernel, initial_parameters, problem_data; max_evaluations=100, seed=22, verbose=false)
     # get the training data from the dataset
-    samples, labels = dataset.training_samples, dataset.training_labels
+    #samples, labels = dataset.training_samples, dataset.training_labels
     
-    (train_samples, test_samples, train_labels, test_labels) = py"train_test_split"(samples,
-                                                                                    labels,
-                                                                                    train_size=0.7,
-                                                                                    random_state=seed,
-                                                                                    shuffle=true)
+    #(train_samples, test_samples, train_labels, test_labels) = py"train_test_split"(samples,
+                                                                                   # labels,
+                                                                                    #train_size=0.7,
+                                                                                    #random_state=seed,
+                                                                                   # shuffle=true)
 
-    problem_data = (train_samples, test_samples, train_labels, test_labels)
-
-    # ensure labels are positive and negative 1
-    if !all(x -> x == 1 || x == -1, train_labels)
-        error("Some training set labels are not -1 or 1.")
-    end
-    if !all(x -> x == 1 || x == -1, test_labels)
-        error("Some testing set labels are not -1 or 1.")
-    end
+    (train_samples, test_samples, train_labels, test_labels) = problem_data
 
     # calculate the oracle matrix once here, since it doesn't
     # depend on the parameter values and so doesn't change with
@@ -249,7 +241,9 @@ function optimize_kernel_target_alignment(parameterised_kernel, initial_paramete
 
         # record the objective value for convergence analysis
         push!(objective_history, objective)
-        println("Evaluation: $evaluation_counter\nAlignment: $objective\nParameters: $parameters\n")
+        if verbose
+            println("Evaluation: $evaluation_counter\nAlignment: $objective\nParameters: $parameters\n")
+        end
         return objective
     end
     opt.max_objective = progress_objective
@@ -264,7 +258,7 @@ end
 "Optimizes a kernel to maximise classification accuracy. max_evaluations determines the maximum number of
 parameter tests the optimizer can perform. In this case that is the number of times the kernel can be
 used to train and test a model."
-function optimize_kernel_accuracy(parameterised_kernel, initial_parameters, problem_data; max_evaluations=300, seed=22, verbose=false)
+function optimize_kernel_accuracy(parameterised_kernel, initial_parameters, problem_data; max_evaluations=100, seed=22, verbose=false)
 
     (train_samples, test_samples, train_labels, test_labels) = problem_data
 
@@ -332,7 +326,7 @@ end
 "Takes a vector of individuals and trains them using parameter
 based training to better classify the dataset. Returns the trained
 parameter values and fitness evaluation histories of the individuals."
-function population_parameterised_training(population, dataset, feature_count; qubit_count=6, depth=6, max_evaluations=60, seed=22, metric_type="accuracy")
+function population_parameterised_training(population, dataset, feature_count; qubit_count=6, depth=6, max_evaluations=100, seed=22, metric_type="accuracy")
     #NOTE: max_evaluations specifies the maximum fitness evaluations per individual, not over the whole
     #population.
     #NOTE: although the argument name is dataset, it takes a value of problem_data form
@@ -359,15 +353,23 @@ function population_parameterised_training(population, dataset, feature_count; q
             return initial_parameters, fill(final_objective, max_evaluations)
         end
     end
-    
+
+    tasks = [Dagger.@spawn process_individual(c) for c in population]
+    outputs = fetch.(tasks)
     #TODO: parallelise this loop
     population_final_parameters::Vector{Vector{Float64}} = []
     histories::Vector{Vector{Float64}} = []
+    for (params, hist) in outputs
+        push!(population_final_parameters, params)
+        push!(histories, hist)
+    end
+    #=
     for c in population
         params, hist = process_individual(c)
         push!(population_final_parameters, params)
         push!(histories, hist)
     end
+    =#
 
     return population_final_parameters, histories
 end

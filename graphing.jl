@@ -305,11 +305,13 @@ function generate_graphs(seed=22)
         #        and draw graphs for the 2nd approach
         #       1.2.1-1.2.6 same as 1.1.1-1.1.6
         #       1.2.7 final population individuals change in accuracy metric with parameter training (maybe can't use best individual since they already have 100% accuracy. try training all individuals and show a few of the graphs)
+        #    1.3 repeat 1.2 but training parameters for target alignment instead of accuracy
         # 2. load results from genetic optimization that use trained accuracy
         #    in genetic fitness function. if the final parameters weren't saved,
         #    re-train them to retrieve the original models. the saved fitness values will
         #    still be correct
         #    2.1 draw graphs for this approach like for steps 1.1 and 1.2
+        # 3. repeat 2 for the genetic optimization that optimized alignment
 
         # GRAPHS TO DRAW IN EACH STEP:
         # draw pareto fronts for each dataset and configuration
