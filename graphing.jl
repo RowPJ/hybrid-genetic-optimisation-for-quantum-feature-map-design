@@ -14,9 +14,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 """
 
-function roc_curve(model_struct::TrainedModel, dataset::Dataset)
-    # compute kernel values for model's training data and the dataset's validation samples
-    kernel_outputs = compute_kernel_matrix(model_struct.kernel, model_struct.training_set, dataset.validation_samples)
+function roc_curve(model_struct::TrainedModel, dataset::Dataset; approach_number=0)
+    # compute kernel values for model's training data and the dataset's training samples
+    kernel_outputs = compute_kernel_matrix(model_struct.kernel, model_struct.training_set, dataset.training_samples)
     # compute decision function outputs (range from -1 to 1)
     df_outputs = decision_function(model_struct.classifier, kernel_outputs)
     # record number of true and false positives for various selections of a thresholding boundary
@@ -28,10 +28,10 @@ function roc_curve(model_struct::TrainedModel, dataset::Dataset)
         # count true and false positives
         true_positive_p = ((true_label, predicted_label),) -> predicted_label == 1 && true_label == 1
         false_positive_p = ((true_label, predicted_label),) -> predicted_label == 1 && true_label == -1
-        tp = count(true_positive_p, zip(dataset.validation_labels, predictions))
-        fp = count(false_positive_p, zip(dataset.validation_labels, predictions))
-        tpr = tp / dataset.num_positive_validation_instances
-        fpr = fp / dataset.num_negative_validation_instances
+        tp = count(true_positive_p, zip(dataset.training_labels, predictions))
+        fp = count(false_positive_p, zip(dataset.training_labels, predictions))
+        tpr = tp / dataset.num_positive_training_instances
+        fpr = fp / dataset.num_negative_training_instances
         push!(true_positive_rates, tpr)
         push!(false_positive_rates, fpr)
     end
@@ -45,25 +45,25 @@ function roc_curve(model_struct::TrainedModel, dataset::Dataset)
     #end
     #auc = round(auc, digits=4)
     dataset_name = dataset.name
-    title = "Roc curve, $dataset_name dataset"#, AUC=$auc"
+    title = "ROC Curve, ($dataset_name, Approach $approach_number)"#, AUC=$auc"
     Plots.plot(false_positive_rates, true_positive_rates, plot_title=title, xlabel="FP rate", ylabel="TP rate")
 end
 
 # dispatch version that takes a chromosome
-function roc_curve(chromosome::AbstractVector{Bool}, dataset::Dataset, n_qubits, depth)
+function roc_curve(chromosome::AbstractVector{Bool}, dataset::Dataset, n_qubits, depth; approach_number=0)
     n_features = dataset.feature_count
     kernel = decode_chromosome_yao(chromosome, n_features, n_qubits, depth)
-    roc_curve(kernel, dataset)
+    roc_curve(kernel, dataset; approach_number=approach_number)
 end
 
 # dispatch version that takes a kernel and first creates the model
-function roc_curve(kernel, dataset::Dataset)
+function roc_curve(kernel, dataset::Dataset; approach_number=0)
     problem_data = py"train_test_split"(dataset.training_samples, dataset.training_labels, train_size=0.7)
     model = train_model(problem_data, kernel)
-    roc_curve(model, dataset)
+    roc_curve(model, dataset; approach_number=approach_number)
 end
 
-function decision_boundary(model_struct, dataset)
+function decision_boundary(model_struct, dataset; approach_number=0)
     function point_to_output(x1, x2)
         # take a coordinate and output its classification
         kernel_output = compute_kernel_matrix(model_struct.kernel,
@@ -76,33 +76,28 @@ function decision_boundary(model_struct, dataset)
 
     axis_interval = -1.2:.01:1.2
 
-    ccol = cgrad([RGB(1,.1,.1), RGB(.1,.1,1)])
-    mcol = [RGB(1,.1,.1) RGB(.1,.1,1)]
+    ccol = cgrad([RGB(1,.2,.2), RGB(.2,.2,1)])
+    #mcol = [RGB(1,.1,.1) RGB(.1,.1,1)]
 
     name = dataset.name
     contour(axis_interval, axis_interval, point_to_output,
-            f=true, nlev=2, c=ccol, leg=:none, title="$name decision boundary",
+            f=true, nlev=2, c=ccol, leg=:none, title="Decision Boundary ($name, Approach $approach_number)",
             xlabel="Feature 1", ylabel="Feature 2")
     scatter!([s[1] for s in dataset.training_samples],
              [s[2] for s in dataset.training_samples],
              m=[:rect :circle],
-             c=mcol,
+             color=[label == -1 ? "red" : "blue" for label in dataset.training_labels],
              lims=(-1.2, 1.2))
 end
 
-#TODO: write a method for this function that loads results for the data set and
-# draws the decision boundary for the highest accuracy classifier in the results
-# by calling the other methods for this function
-function decision_boundary(dataset::Dataset)
-end
 
-function plot_final_fitness_pareto_front(final_fitnesses; dataset_name="undef", training_type="undef")
+function plot_final_fitness_pareto_front(final_fitnesses; dataset_name="undef", training_type="undef", approach_number=0)
     xs = [final_fitnesses[i][2] for i in 1:length(final_fitnesses)] #size values
     ys = [-final_fitnesses[i][1] for i in 1:length(final_fitnesses)] #accuracy values
     # plot pareto front with 
     Plots.plot(xs, ys,
                seriestype=:scatter,
-               title="Final generation pareto front ($dataset_name, $training_type)",
+               title="Final generation pareto front ($dataset_name, Approach $approach_number)",
                xlim=(0, 6), ylim=(0.35, 1),
                xlabel="Size metric", ylabel="Accuracy metric",
                legend=false)
@@ -197,6 +192,105 @@ function visualize_genetic_and_parameter_training(genetic_fitness_history, param
     gif(animation, "./diagrams/pareto_front_change_with_parameter_training $dataset_name $genetic_training_type $parameter_training_type.gif", fps=frame_rate)
 end
 
+"Returns a latex string for drawing a chromosome with Quantikz"
+function draw_chromosome_latex(chromosome, feature_count, qubit_count, depth; parameters=nothing, rounding=4) # rounding specifies how many digits to round proportionality parameters to
+    next_qubit_index(q) = q % qubit_count + 1
+    block_cases = [0, 3, 2, 1, 1, 2, 2, 1]
+    angle_map = [pi, pi/2, pi/4, pi/8]
+    function extract_initial_parameters()
+        initial_parameters::Vector{Float64} = []
+        bits_per_gate = 5
+        for (i, h) in enumerate(range(start=1, step=bits_per_gate, stop=length(chromosome)))
+            j = (i-1) % qubit_count + 1
+            k = (i-1) % feature_count + 1
+            mapping_index = (chromosome[h]*4 + chromosome[h+1]*2 + chromosome[h+2]) + 1
+            block_case = @inbounds block_cases[mapping_index]
+            # only account for block case 1, the case of parameterised gates
+            if block_case == 1
+                proportionality_parameter_index = (chromosome[h+3]*2 + chromosome[h+4]) + 1
+                proportionality_parameter = angle_map[proportionality_parameter_index]
+                push!(initial_parameters, proportionality_parameter)
+            end
+        end
+        return initial_parameters
+    end
+    # if parameters weren't supplied, just extract the defaults from the chromosome
+    if isnothing(parameters)
+        parameters = extract_initial_parameters()
+    end
+
+    # strings for each qubit's gates.
+    # these need to be combined when building the result
+    qubit_strings = [raw"    \lstick{$\ket{0}$} " for i in 1:qubit_count] # initially have a 0 ket for each qubit
+    # functions for each case that take a qubit number, proportionality parameter, and parameter name for
+    # the encoded data point and edit the qubit strings to add that gate to the circuit
+    function apply_hadamard_string(qubit, prop_param, data_param)
+        qubit_strings[qubit] *= raw"& \gate{H} "
+    end
+    function apply_cnot_string(qubit, prop_param, data_param)
+        target_qubit = next_qubit_index(qubit)
+        qubit_strings[qubit] *= "& \\ctrl{$target_qubit} "
+        qubit_strings[target_qubit] *=  raw"$ targ{} "
+    end
+    function apply_empty_gate_string(qubit, prop_param, data_param)
+        qubit_strings[qubit] *= raw"& \qw "
+    end
+    function apply_rz_string(qubit, prop_param, data_param)
+        qubit_strings[qubit] *= "& \\gate{R_z($prop_param * $data_param)} "
+    end
+    function apply_rx_string(qubit, prop_param, data_param)
+        qubit_strings[qubit] *= "& \\gate{R_x($prop_param * $data_param)} "
+    end
+    function apply_ry_string(qubit, prop_param, data_param)
+        qubit_strings[qubit] *= "& \\gate{R_y($prop_param * $data_param)} "
+    end
+    # mapping from block case to applier function
+    block_appliers = [apply_hadamard_string, # hadamard
+                        apply_cnot_string, #cnot
+                        apply_empty_gate_string, #empty block case
+                        apply_rx_string, #Rx
+                        apply_rz_string, #Rz
+                        apply_empty_gate_string, #empty block case
+                        apply_empty_gate_string, #empty block case
+                        apply_ry_string] #Ry
+    
+    # define function that applies the gates of the feature map to the circuit
+    function feature_map()
+        current_parameter_index = 1
+        bits_per_gate = 5
+        for (i, h) in enumerate(range(start=1, step=bits_per_gate, stop=length(chromosome)))
+            j = (i-1) % qubit_count + 1
+            k = (i-1) % feature_count + 1
+            mapping_index = (chromosome[h]*4 + chromosome[h+1]*2 + chromosome[h+2]) + 1
+            block_case = @inbounds block_cases[mapping_index]
+            block_applier = @inbounds block_appliers[mapping_index]
+            
+            if block_case == 1
+                # if the gate is parameterised, consume a parameter
+                # then apply the gate
+                parameter = parameters[current_parameter_index]
+                current_parameter_index += 1
+
+                block_applier(j, round(parameter, digits=rounding), "x_$(k-1)") # data parameter value is x_k for kth data value
+            else
+                # otherwise, just apply the gate without parameters
+                block_applier(j, nothing, nothing)
+            end
+        end
+    end
+
+    # trigger qubit_strings to be filled in
+    feature_map()
+    
+    final_string = "\\begin{quantikz}\n"
+    # combine qubit_strings into the final latex string
+    for qubit_ops in qubit_strings
+        final_string *= qubit_ops * "& \\qw \\\\\n" # append and empty wire and \\ to end the qubit line, then add a new line character
+    end
+    final_string *= "\\end{quantikz}\n"
+    return final_string
+end
+
 #NOTE: uses python's matplotlib, pandas, and seaborn modules for drawing the plots
 function confusion_matrix(model_struct::TrainedModel, test_set_samples, test_set_labels)
     # record variables for false positives, true positives, false negatives, and true negatives
@@ -241,13 +335,14 @@ function confusion_matrix(model_struct::TrainedModel, test_set_samples, test_set
     array = [[tp, fp],
              [fn, tn]]
     dataframe = py"pd.DataFrame"(array, index=row_labels, columns=column_labels)
-    py"sn.set(font_scale=2)" # set label size
-    result = py"sn.heatmap"(dataframe, annot=true, annot_kws=Dict("size"=>20)) # set font size
+    #py"sn.set(font_scale=20)" # set axis label size (need to adjust to find the right scale, 20 is far too large)
+    py"plt.clf()" # clear old figure
+    result = py"sn.heatmap"(dataframe, linecolor="black", fmt="d", annot=true, annot_kws=py"{'fontsize':16}", cbar=false)#, annot_kws=Dict("size"=>20)) # set font size
     return result
 end
 
 function confusion_matrix(model_struct::TrainedModel, dataset::Dataset)
-    confusion_matrix(model_struct, dataset.validation_samples, dataset.validation_labels)
+    confusion_matrix(model_struct, dataset.training_samples, dataset.training_labels)
 end
 
 ### Code that executes the graph generation for each experiment configuration using the above functions goes below
@@ -283,12 +378,21 @@ function generate_decision_boundary_graphs(configuration)
 end
 =#
 
+#TODO: fix the confusion matrix layout sizes because the numbers in the matrix are entirely unreadable. maybe do the diagram drawing in latex
+# and just output the required numbers to a file in a way that's easy to copy and paste into overleaf
+
+function save_text(text, filename)
+    outfile = open(filename, "w")
+    write(outfile, text)
+    close(outfile)
+end
+
 #POPULATION_TYPE
 #SINGLE_CLASSIFIER_TYPE
 "Load results, then create and save graphs for each data set and approach being compared (original, parameter refinement, trained accuracy metric)."
 function generate_graphs(seed=22)
     # for each data set
-    for dataset_name in ["moons", "digits", "cancer", "iris"]
+    for dataset_name in ["moons", "digits", "cancer", "iris", "blobs", "circles", "adhoc"]
         # retrieve the dataset object corresponding to the name
         dataset::Dataset = dataset_map[dataset_name]
 
@@ -322,12 +426,12 @@ function generate_graphs(seed=22)
         println("Dataset: $dataset_name")
         println("Step 1: Approaches 1 and 2")
         # step 1
-        println("Step 1.1: Approach 1")
+        println("Step 1.1: Approach 1 - Reproduction of referenced paper's approach")
         population, fitnesses, history = load_results(dataset_name, "accuracy")
         # step 1.1
         println("Step 1.1.1: Final pareto front")
         # 1.1.1 Pareto front
-        fig = plot_final_fitness_pareto_front(fitnesses; dataset_name=dataset_name, training_type="accuracy")
+        fig = plot_final_fitness_pareto_front(fitnesses; dataset_name=dataset_name, training_type="accuracy", approach_number=1)
         savefig(fig, "./diagrams/$dataset_name accuracy final_fitness_pareto_front.pdf")
         # 1.1.2 Pareto front animation
         println("Step 1.1.2: Pareto front animation")
@@ -336,9 +440,8 @@ function generate_graphs(seed=22)
         println("Step 1.1.3: Best individual circuit")
         best_chromosome_index = best_individual_index(population, fitnesses)
         best_chromosome = population[best_chromosome_index]
-        figure = draw_chromosome(best_chromosome, dataset.feature_count, 6, 6) # the draw_chromosome function is defined in tests.jl, maybe move the definition to this file        
-        figure |> PDF("./diagrams/$dataset_name accuracy best_individual_circuit.pdf")
-        #savefig(figure, ./diagrams/$dataset_name accuracy best_individual_circuit.tex") # save circuits in tex output format so that the symbolic figures can be corrected for parameters to fit in the gate blocks
+        figure = draw_chromosome_latex(best_chromosome, dataset.feature_count, 6, 6) # the draw_chromosome function is defined in tests.jl, maybe move the definition to this file
+        save_text(figure, "./diagrams/$(dataset_name)_accuracy_best_individual_circuit.tex")
         
         # for the further stages of step 1, the best individual model must be instantiated from the chromosome and training dataset
         kernel = decode_chromosome_yao(best_chromosome, dataset.feature_count, 6, 6)
@@ -353,7 +456,7 @@ function generate_graphs(seed=22)
         
         # 1.1.4 Best individual ROC curve
         println("Step 1.1.4: Best individual ROC curve")
-        figure = roc_curve(model_struct, dataset)
+        figure = roc_curve(model_struct, dataset; approach_number=1)
         savefig(figure, "./diagrams/$dataset_name accuracy best_individual_roc_curve.pdf")
         # 1.1.5 Best individual confusion matrix
         println("Step 1.1.5: Best individual confusion matrix")
@@ -364,15 +467,15 @@ function generate_graphs(seed=22)
         # 1.1.6 Best individual decision boundary (for 2D datasets)
         if dataset.feature_count == 2
             println("Step 1.1.6: Best individual decision boundary")
-            figure = decision_boundary(model_struct, dataset)
+            figure = decision_boundary(model_struct, dataset; approach_number=1)
             savefig(figure, "./diagrams/$dataset_name accuracy best_individual_decision_boundary.pdf")
         end
 
         println("Best individual metric values ($dataset_name approach 1):", fitnesses[best_chromosome_index])
 
         # Step 1.2: perform parameter training to get 2nd approach results (maybe separate training into experiments.jl and just load the results here?)
-        println("Step 1.2: Approach 2")
-        population_final_parameters, parameter_training_fitness_history = population_parameterised_training(population, problem_data, dataset.feature_count; qubit_count=6, depth=6, max_evaluations=300, seed=seed, metric_type="accuracy")
+        println("Step 1.2: Approach 2.1 - accuracy training")
+        population_final_parameters, parameter_training_fitness_history = population_parameterised_training(population, problem_data, dataset.feature_count; qubit_count=6, depth=6, max_evaluations=100, seed=seed, metric_type="accuracy")
         # This below variable is the recreation of the fitnesses variable for the second approach (parameter refinement approach).
         # it holds the multi-objective fitness values for the final population after parameter training. It uses the last recorded
         # accuracy from parameter training as the accuracy and the size metric is copied from the first approach fitnesses.
@@ -382,7 +485,7 @@ function generate_graphs(seed=22)
         # 1.2.1-1.2.6 follow similarly to 1.1.1-1.1.6, so some repeated comments are left out
         # 1.2.1 Pareto front
         println("Step 1.2.1: Final pareto front")
-        figure = plot_final_fitness_pareto_front(fitnesses_2; dataset_name=dataset_name, training_type="parameters accuracy trained")
+        figure = plot_final_fitness_pareto_front(fitnesses_2; dataset_name=dataset_name, training_type="parameters accuracy trained", approach_number=2.1)
         savefig(figure, "./diagrams/$dataset_name accuracy trained final_fitness_pareto_front.pdf")
         # 1.2.2 Pareto front animation
         println("Step 1.2.2: Pareto front animation")
@@ -415,16 +518,15 @@ function generate_graphs(seed=22)
         println(length(best_chromosome_trained_parameters))
         =#
         best_kernel = best_parameterised_kernel(best_chromosome_trained_parameters)
-        figure = draw_kernel(best_kernel, dataset.feature_count)
-        figure |> PDF("./diagrams/$dataset_name accuracy trained best_individual_circuit.pdf")
-        #savefig(figure, "./diagrams/$dataset_name accuracy trained best_individual_circuit.tex")
+        figure = draw_chromosome_latex(best_chromosome_2, dataset.feature_count, 6, 6; parameters=best_chromosome_trained_parameters)
+        save_text(figure, "./diagrams/$(dataset_name)_accuracy_trained_best_individual_circuit.tex")
 
         # problem_data variable is defined when graphing first approach
         model_struct_2 = train_model(problem_data, best_kernel, seed)
         
         # 1.2.4 Best individual ROC curve
         println("Step 1.2.4: Best individual ROC curve")
-        figure = roc_curve(model_struct_2, dataset)
+        figure = roc_curve(model_struct_2, dataset; approach_number=2.1)
         savefig(figure, "./diagrams/$dataset_name accuracy trained best_individual_roc_curve.pdf")
         # 1.2.5 Best individual confusion matrix
         println("Step 1.2.5: Best individual confusion matrix")
@@ -433,21 +535,71 @@ function generate_graphs(seed=22)
         # 1.2.6 Best individual decision boundary (for 2D datasets)
         if dataset.feature_count == 2
             println("Step 1.2.6: Best individual decision boundary")
-            figure = decision_boundary(model_struct_2, dataset)
+            figure = decision_boundary(model_struct_2, dataset; approach_number=2.1)
             savefig(figure, "./diagrams/$dataset_name accuracy trained best_individual_decision_boundary.pdf")
         end
 
         println("Best individual metric values ($dataset_name approach 2):", fitnesses_2[best_chromosome_index_2])
 
+        
+        # Step 1.3: repeat 1.2 but training parameters for target alignment
+        begin
+            println("Step 1.3: Approach 2.2 - alignment training")
+            population_final_parameters_alignment, parameter_training_fitness_history_alignment = population_parameterised_training(population, problem_data, dataset.feature_count; qubit_count=6, depth=6, max_evaluations=100, seed=seed, metric_type="target_alignment")
+            # calculate accuracy of final models when using the trained parameters
+            population_trained_accuracies_alignment = []
+            for (c, c_final_params) in zip(population, population_final_parameters_alignment)
+                c_parameterised_kernel, c_initial_params = decode_chromosome_parameterised_yao(c, dataset.feature_count, 6, 6)
+                c_model = train_model(problem_data, c_parameterised_kernel(c_final_params), seed)
+                push!(population_trained_accuracies_alignment, accuracy_metric_yao(c_model, problem_data))
+            end
+            fitnesses_2_alignment = [[-population_trained_accuracies_alignment[i], fitnesses[i][2]] for i in 1:length(population)]
+            # 1.3.1-1.3.6 follow similarly to 1.1.1-1.1.6, so some repeated comments are left out
+            # 1.3.1 Pareto front
+            println("Step 1.3.1: Final pareto front")
+            figure_alignment = plot_final_fitness_pareto_front(fitnesses_2_alignment; dataset_name=dataset_name, training_type="parameters alignment trained", approach_number=2.2)
+            savefig(figure_alignment, "./diagrams/$dataset_name alignment trained final_fitness_pareto_front.pdf")
+            # 1.3.2 Pareto front animation - skipped since training alignment didn't update accuracies for each parameter change
+            # maybe replace with a graph showing how training improved alignment?
+            # 1.3.3 Best individual circuit
+            println("Step 1.3.3: Best individual circuit")
+            best_chromosome_index_2_alignment = best_individual_index(population, fitnesses_2_alignment)
+            best_chromosome_2_alignment = population[best_chromosome_index_2_alignment]
+            best_chromosome_trained_parameters_alignment = population_final_parameters_alignment[best_chromosome_index_2_alignment]
+            best_parameterised_kernel_alignment, best_initial_parameters_alignment = decode_chromosome_parameterised_yao(best_chromosome_2_alignment, dataset.feature_count, 6, 6)
+            best_kernel_alignment = best_parameterised_kernel_alignment(best_chromosome_trained_parameters_alignment)
+            figure_alignment = draw_chromosome_latex(best_chromosome_2_alignment, dataset.feature_count, 6, 6; parameters=best_chromosome_trained_parameters_alignment)
+            save_text(figure_alignment, "./diagrams/$(dataset_name)_alignment_trained_best_individual_circuit.tex")
+
+            model_struct_2_alignment = train_model(problem_data, best_kernel_alignment, seed)
+            
+            # 1.3.4 Best individual ROC curve
+            println("Step 1.3.4: Best individual ROC curve")
+            figure_alignment = roc_curve(model_struct_2_alignment, dataset; approach_number=2.2)
+            savefig(figure_alignment, "./diagrams/$dataset_name alignment trained best_individual_roc_curve.pdf")
+            # 1.3.5 Best individual confusion matrix
+            println("Step 1.3.5: Best individual confusion matrix")
+            cm_alignment = confusion_matrix(model_struct_2_alignment, dataset)
+            py"plt.savefig"("./diagrams/$dataset_name alignment trained best_individual_confusion_matrix.pdf")
+            # 1.3.6 Best individual decision boundary (for 2D datasets)
+            if dataset.feature_count == 2
+                println("Step 1.2.6: Best individual decision boundary")
+                figure_alignment = decision_boundary(model_struct_2_alignment, dataset; approach_number=2.2)
+                savefig(figure_alignment, "./diagrams/$dataset_name alignment trained best_individual_decision_boundary.pdf")
+            end
+
+            println("Best individual metric values ($dataset_name approach 2 - target alignment):", fitnesses_2_alignment[best_chromosome_index_2_alignment])
+        end
+
         # step 2
-        println("Step 2: Approach 3")
+        println("Step 2: Approach 3.1 - accuracy training in genetic fitness")
         population_3, fitnesses_3, history_3 = load_results(dataset_name, "accuracy_parameter_training")
-        population_final_parameters_3, parameter_training_fitness_history_3 = population_parameterised_training(population_3, problem_data, dataset.feature_count; qubit_count=6, depth=6, max_evaluations=300, seed=seed, metric_type="accuracy")
+        population_final_parameters_3, parameter_training_fitness_history_3 = population_parameterised_training(population_3, problem_data, dataset.feature_count; qubit_count=6, depth=6, max_evaluations=100, seed=seed, metric_type="accuracy")
         # 2.1
         println("Step 2.1: Draw graphs from Step 1.1")
         # 2.1.1 Pareto front
         println("Step 2.1.1: Final pareto front")
-        figure = plot_final_fitness_pareto_front(fitnesses_3; dataset_name=dataset_name, training_type="accuracy training in fitness")
+        figure = plot_final_fitness_pareto_front(fitnesses_3; dataset_name=dataset_name, training_type="accuracy training in fitness", approach_number=3.1)
         savefig(figure, "./diagrams/$dataset_name accuracy training in fitness final_fitness_pareto_front.pdf")
         # 2.1.2 Pareto front animation
         println("Step 2.1.2: Pareto front animation")
@@ -459,16 +611,15 @@ function generate_graphs(seed=22)
         best_chromosome_trained_parameters_3 = population_final_parameters_3[best_chromosome_index_3]
         best_parameterised_kernel_3, best_initial_parameters_3 = decode_chromosome_parameterised_yao(best_chromosome_3, dataset.feature_count, 6, 6)
         best_kernel_3 = best_parameterised_kernel_3(best_chromosome_trained_parameters_3)
-        figure = draw_kernel(best_kernel_3, dataset.feature_count)
-        figure |> PDF("./diagrams/$dataset_name accuracy training in fitness best_individual_circuit.pdf")
-        #savefig(figure, "./diagrams/$dataset_name accuracy trained best_individual_circuit.tex")
+        figure = draw_chromosome_latex(best_chromosome_3, dataset.feature_count, 6, 6; parameters=best_chromosome_trained_parameters_3)
+        save_text(figure, "./diagrams/$(dataset_name)_accuracy_training_in_fitness_best_individual_circuit.tex")
 
         # problem_data variable is defined when graphing first approach
         model_struct_3 = train_model(problem_data, best_kernel_3, seed)
         
         # 2.1.4 Best individual ROC curve
         println("Step 2.1.4: Best individual ROC curve")
-        figure = roc_curve(model_struct_3, dataset)
+        figure = roc_curve(model_struct_3, dataset; approach_number=3.1)
         savefig(figure, "./diagrams/$dataset_name accuracy training in fitness best_individual_roc_curve.pdf")
         # 2.1.5 Best individual confusion matrix
         println("Step 2.1.5: Best individual confusion matrix")
@@ -477,10 +628,55 @@ function generate_graphs(seed=22)
         # 2.1.6 Best individual decision boundary (for 2D datasets)
         if dataset.feature_count == 2
             println("Step 2.1.6: Best individual decision boundary")
-            figure = decision_boundary(model_struct_3, dataset)
+            figure = decision_boundary(model_struct_3, dataset; approach_number=3.1)
             savefig(figure, "./diagrams/$dataset_name accuracy training in fitness best_individual_decision_boundary.pdf")
         end
 
         println("Best individual metric values ($dataset_name approach 3):", fitnesses_3[best_chromosome_index_3])
+        
+        begin
+            # step 3
+            println("Step 3: Approach 3.2 - alignment training in genetic fitness")
+            population_3_alignment, fitnesses_3_alignment, history_3_alignment = load_results(dataset_name, "alignment_parameter_training")
+            population_final_parameters_3_alignment, parameter_training_fitness_history_3_alignment = population_parameterised_training(population_3_alignment, problem_data, dataset.feature_count; qubit_count=6, depth=6, max_evaluations=100, seed=seed, metric_type="target_alignment")
+            # 3.1
+            println("Step 3.1: Draw graphs from Step 1.1")
+            # 3.1.1 Pareto front
+            println("Step 3.1.1: Final pareto front")
+            figure_alignment = plot_final_fitness_pareto_front(fitnesses_3_alignment; dataset_name=dataset_name, training_type="alignment training in fitness", approach_number=3.2)
+            savefig(figure_alignment, "./diagrams/$dataset_name alignment training in fitness final_fitness_pareto_front.pdf")
+            # 3.1.2 Pareto front animation
+            println("Step 3.1.2: Pareto front animation")
+            animate_genetic_fitness_history(history_3_alignment; dataset_name=dataset_name, training_type="alignment training in fitness")
+            # 3.1.3 Best individual circuit
+            println("Step 3.1.3: Best individual circuit")
+            best_chromosome_index_3_alignment = best_individual_index(population_3_alignment, fitnesses_3_alignment)
+            best_chromosome_3_alignment = population_3_alignment[best_chromosome_index_3_alignment]
+            best_chromosome_trained_parameters_3_alignment = population_final_parameters_3_alignment[best_chromosome_index_3_alignment]
+            best_parameterised_kernel_3_alignment, best_initial_parameters_3_alignment = decode_chromosome_parameterised_yao(best_chromosome_3_alignment, dataset.feature_count, 6, 6)
+            best_kernel_3_alignment = best_parameterised_kernel_3_alignment(best_chromosome_trained_parameters_3_alignment)
+            figure_alignment = draw_chromosome_latex(best_chromosome_3_alignment, dataset.feature_count, 6, 6; parameters=best_chromosome_trained_parameters_3_alignment)
+            save_text(figure_alignment, "./diagrams/$(dataset_name)_alignment_training_in_fitness_best_individual_circuit.tex")
+
+            # problem_data variable is defined when graphing first approach
+            model_struct_3_alignment = train_model(problem_data, best_kernel_3_alignment, seed)
+            
+            # 3.1.4 Best individual ROC curve
+            println("Step 3.1.4: Best individual ROC curve")
+            figure_alignment = roc_curve(model_struct_3_alignment, dataset; approach_number=3.2)
+            savefig(figure_alignment, "./diagrams/$dataset_name alignment training in fitness best_individual_roc_curve.pdf")
+            # 3.1.5 Best individual confusion matrix
+            println("Step 3.1.5: Best individual confusion matrix")
+            cm_alignment = confusion_matrix(model_struct_3_alignment, dataset)
+            py"plt.savefig"("./diagrams/$dataset_name alignment training in fitness best_individual_confusion_matrix.pdf")
+            # 3.1.6 Best individual decision boundary (for 2D datasets)
+            if dataset.feature_count == 2
+                println("Step 3.1.6: Best individual decision boundary")
+                figure_alignment = decision_boundary(model_struct_3_alignment, dataset; approach_number=3.2)
+                savefig(figure_alignment, "./diagrams/$dataset_name alignment training in fitness best_individual_decision_boundary.pdf")
+            end
+
+            println("Best individual metric values ($dataset_name approach 3 - alignment):", fitnesses_3_alignment[best_chromosome_index_3_alignment])
+        end
     end
 end

@@ -10,7 +10,7 @@ using PyCall
 
 # ensure python dependencies (modules and user defined functions) are loaded
 py"""
-from sklearn.datasets import make_moons, load_iris, load_breast_cancer, load_digits
+from sklearn.datasets import make_moons, make_blobs, make_circles, load_iris, load_breast_cancer, load_digits
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 import numpy as np
@@ -374,17 +374,174 @@ function load_digits(;num_train_samples=150, target_dimensionality=8)
     nothing
 end
 
+# blobs, like moons
+if !isdefined(Main, :blobs_dataset)
+    blobs_dataset = nothing
+end
+"Generates and processes blobs training and validation sets."
+function load_blobs(;num_train_samples=150, seed=22, num_validation_samples=500)
+    # generate data
+    samples, labels = py"make_blobs"(n_samples=num_train_samples+num_validation_samples,
+                                     random_state=seed,
+                                     centers=2, # 2 classes
+                                     n_features=2) # 2 features
+
+    # convert to a list of rows instead of a matrix
+    row(m, i) = @view m[i, :]
+    to_rows(matrix) = [row(matrix, i) for i in 1:size(matrix)[1]]
+    samples = to_rows(samples)
+
+    # scale features and replace labels
+    samples, labels = py"process_dataset"(samples, labels)
+    samples = to_rows(samples)
+
+    # separate training and validation data points
+    training_pair, validation_pair = separate_training_and_validation_sets(samples, labels, num_train_samples)
+
+    num_positive(l) = count(==(1), l)
+    num_negative(l) = count(==(-1), l)
+
+    # save loaded data to variables
+    global blobs_dataset
+    blobs_dataset = Dataset(training_pair[1],
+                            training_pair[2],
+                            validation_pair[1],
+                            validation_pair[2],
+                            [0, 1],
+                            ["Blob 1", "Blob 2"],
+                            2,
+                            length(training_pair[1]),
+                            length(validation_pair[1]),
+                            num_positive(training_pair[2]),
+                            num_negative(training_pair[2]),
+                            num_positive(validation_pair[2]),
+                            num_negative(validation_pair[2]),
+                            "blobs")
+    
+    nothing
+end
+
+# circles, like moons
+if !isdefined(Main, :circles_dataset)
+    circles_dataset = nothing
+end
+"Generates and processes circles training and validation sets."
+function load_circles(;num_train_samples=150, seed=22, num_validation_samples=500)
+    # generate data
+    samples, labels = py"make_circles"(n_samples=num_train_samples+num_validation_samples,
+                                       random_state=seed)
+
+    # convert to a list of rows instead of a matrix
+    row(m, i) = @view m[i, :]
+    to_rows(matrix) = [row(matrix, i) for i in 1:size(matrix)[1]]
+    samples = to_rows(samples)
+
+    # scale features and replace labels
+    samples, labels = py"process_dataset"(samples, labels)
+    samples = to_rows(samples)
+
+    # separate training and validation data points
+    training_pair, validation_pair = separate_training_and_validation_sets(samples, labels, num_train_samples)
+
+    num_positive(l) = count(==(1), l)
+    num_negative(l) = count(==(-1), l)
+
+    # save loaded data to variables
+    global circles_dataset
+    circles_dataset = Dataset(training_pair[1],
+                            training_pair[2],
+                            validation_pair[1],
+                            validation_pair[2],
+                            [0, 1],
+                            ["Circle 1", "Circle 2"],
+                            2,
+                            length(training_pair[1]),
+                            length(validation_pair[1]),
+                            num_positive(training_pair[2]),
+                            num_negative(training_pair[2]),
+                            num_positive(validation_pair[2]),
+                            num_negative(validation_pair[2]),
+                            "circles")
+    
+    nothing
+end
+
+function shuffle(vector)
+    len = length(vector)
+    @inbounds for i in 1:(len-1)
+        j = floor(Int64, rand()*(len-(i-1)))+1
+        temp = vector[i]
+        vector[i] = vector[j]
+        vector[j] = temp
+    end
+    return vector
+end
+
+# random adhoc dataset
+if !isdefined(Main, :adhoc_dataset)
+    adhoc_dataset = nothing
+end
+"Generates and processes adhoc training and validation sets."
+function load_adhoc(;num_train_samples=150, seed=22, num_validation_samples=500)
+    # generate data
+    n_samples = num_train_samples + num_validation_samples
+    n_positive = n_samples ÷ 2
+    n_negative = n_samples - n_positive
+    samples = (8*rand(n_samples, 2) .- 4) # random floats from -4 to 4
+    labels = shuffle(vcat([1 for i in 1:n_positive], [0 for i in 1:n_negative])) # a balanced number of samples per class
+
+    # convert to a list of rows instead of a matrix
+    row(m, i) = @view m[i, :]
+    to_rows(matrix) = [row(matrix, i) for i in 1:size(matrix)[1]]
+    samples = to_rows(samples)
+
+    # scale features and replace labels
+    samples, labels = py"process_dataset"(samples, labels)
+    samples = to_rows(samples)
+
+    # separate training and validation data points
+    training_pair, validation_pair = separate_training_and_validation_sets(samples, labels, num_train_samples)
+
+    num_positive(l) = count(==(1), l)
+    num_negative(l) = count(==(-1), l)
+
+    # save loaded data to variables
+    global adhoc_dataset
+    adhoc_dataset = Dataset(training_pair[1],
+                            training_pair[2],
+                            validation_pair[1],
+                            validation_pair[2],
+                            [0, 1],
+                            ["Class 1", "Class 2"],
+                            2,
+                            length(training_pair[1]),
+                            length(validation_pair[1]),
+                            num_positive(training_pair[2]),
+                            num_negative(training_pair[2]),
+                            num_positive(validation_pair[2]),
+                            num_negative(validation_pair[2]),
+                            "adhoc")
+    
+    nothing
+end
+
 function load_all_datasets()
     load_moons()
     load_iris()
     load_cancer()
     load_digits()
+    load_blobs()
+    load_circles()
+    load_adhoc()
 end
 
 load_all_datasets()
 
 #allows retrieving a dataset directly from the name
 dataset_map = Dict("moons"=>moons_dataset,
-                    "digits"=>digits_dataset,
-                    "cancer"=>cancer_dataset,
-                    "iris"=>iris_dataset)
+                   "digits"=>digits_dataset,
+                   "cancer"=>cancer_dataset,
+                   "iris"=>iris_dataset,
+                   "blobs"=>blobs_dataset,
+                   "circles"=>circles_dataset,
+                   "adhoc"=>adhoc_dataset)

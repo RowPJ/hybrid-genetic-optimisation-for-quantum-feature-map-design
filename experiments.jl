@@ -176,12 +176,15 @@ solve_moons_accuracy, solve_moons_margin, solve_moons_cross_validation, solve_mo
 solve_cancer_accuracy, solve_cancer_margin, solve_cancer_cross_validation, solve_cancer_genetic_and_parameter_training_accuracy, solve_cancer_genetic_and_parameter_training_target_alignment = generate_genetic_metric_variation_experiment_functions(cancer_dataset)
 solve_iris_accuracy, solve_iris_margin, solve_iris_cross_validation, solve_iris_genetic_and_parameter_training_accuracy, solve_iris_genetic_and_parameter_training_target_alignment = generate_genetic_metric_variation_experiment_functions(iris_dataset)
 solve_digits_accuracy, solve_digits_margin, solve_digits_cross_validation, solve_digits_genetic_and_parameter_training_accuracy, solve_digits_genetic_and_parameter_training_target_alignment = generate_genetic_metric_variation_experiment_functions(digits_dataset)
+solve_blobs_accuracy, solve_blobs_margin, solve_blobs_cross_validation, solve_blobs_genetic_and_parameter_training_accuracy, solve_blobs_genetic_and_parameter_training_target_alignment = generate_genetic_metric_variation_experiment_functions(blobs_dataset)
+solve_circles_accuracy, solve_circles_margin, solve_circles_cross_validation, solve_circles_genetic_and_parameter_training_accuracy, solve_circles_genetic_and_parameter_training_target_alignment = generate_genetic_metric_variation_experiment_functions(circles_dataset)
+solve_adhoc_accuracy, solve_adhoc_margin, solve_adhoc_cross_validation, solve_adhoc_genetic_and_parameter_training_accuracy, solve_adhoc_genetic_and_parameter_training_target_alignment = generate_genetic_metric_variation_experiment_functions(adhoc_dataset)
 
 
 "Given a list of population individuals and a list of their corresponding fitness values,
 returns the index of the best performing individual measured by their accuracy metric
 or its substitute."
-function best_individual_index(population, fitnesses)
+function best_individual_index(population, fitnesses) #NOTE: could remove population argument from the argument list if it won't be needed in the future
     # get the highest-accuracy individual
     highest_accuracy = fitnesses[1][1]
     smallest_size = fitnesses[1][2]
@@ -232,7 +235,7 @@ end
 # 3. create a dispatch version that takes a chromosome and parameters and calls the first version with the parameters substituted into its kernel
 
 #=
-function parameter_training_experiment(dataset::Dataset; qubit_count=6, depth=6, max_evaluations=60, seed=22, genetic_metric_type="accuracy", parameter_metric_type="accuracy")
+function parameter_training_experiment(dataset::Dataset; qubit_count=6, depth=6, max_evaluations=100, seed=22, genetic_metric_type="accuracy", parameter_metric_type="accuracy")
     # load the genetic training results for the given data set
     population, fitnesses, genetic_fitness_histories = load_results(dataset.name, genetic_metric_type)
     # train the population with parameter based training
@@ -253,16 +256,21 @@ end
 # run a bunch of experiments, saving results
 function main(seed=22)
     @time begin
-        #=
         # first run all experiments of genetic training, saving results
         for (fn, name) in zip([solve_moons_accuracy,
                     solve_cancer_accuracy,
                     solve_iris_accuracy,
-                    solve_digits_accuracy],
+                    solve_digits_accuracy,
+                    solve_blobs_accuracy,
+                    solve_circles_accuracy,
+                    solve_adhoc_accuracy],
                     ["moons",
                     "cancer",
                     "iris",
-                    "digits"])
+                    "digits",
+                    "blobs",
+                    "circles",
+                    "adhoc"])
               results = fn(;seed=seed)
             println("Finished $name accuracy")
             save_results(name, "accuracy", results)
@@ -271,25 +279,36 @@ function main(seed=22)
         for (fn, name) in zip([solve_moons_genetic_and_parameter_training_accuracy,
                     solve_cancer_genetic_and_parameter_training_accuracy,
                     solve_iris_genetic_and_parameter_training_accuracy,
-                    solve_digits_genetic_and_parameter_training_accuracy],
+                    solve_digits_genetic_and_parameter_training_accuracy,
+                    solve_blobs_genetic_and_parameter_training_accuracy,
+                    solve_circles_genetic_and_parameter_training_accuracy,
+                    solve_adhoc_genetic_and_parameter_training_accuracy],
                     ["moons",
-                   "cancer",
-                   "iris",
-                   "digits"])
+                    "cancer",
+                    "iris",
+                    "digits",
+                    "blobs",
+                    "circles",
+                    "adhoc"])
             results = fn(;seed=seed)
             println("Finished $name accuracy with parameter training")
             save_results(name, "accuracy_parameter_training", results)
         end
-        =#
         # third, run all experiments with the genetic training including parameter optimization for maximizing target alignment
         for (fn, name) in zip([solve_moons_genetic_and_parameter_training_target_alignment,
                     solve_cancer_genetic_and_parameter_training_target_alignment,
                     solve_iris_genetic_and_parameter_training_target_alignment,
-                    solve_digits_genetic_and_parameter_training_target_alignment],
+                    solve_digits_genetic_and_parameter_training_target_alignment,
+                    solve_blobs_genetic_and_parameter_training_target_alignment,
+                    solve_circles_genetic_and_parameter_training_target_alignment,
+                    solve_adhoc_genetic_and_parameter_training_target_alignment],
                     ["moons",
                     "cancer",
                     "iris",
-                    "digits"])
+                    "digits",
+                    "blobs",
+                    "circles",
+                    "adhoc"])
             results = fn(;seed=seed)
             println("Finished $name accuracy with parameter training for target alignment")
             save_results(name, "alignment_parameter_training", results)

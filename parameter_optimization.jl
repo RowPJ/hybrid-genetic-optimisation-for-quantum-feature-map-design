@@ -344,7 +344,6 @@ function population_parameterised_training(population, dataset, feature_count; q
                                                                                                           dataset;
                                                                                                           max_evaluations=max_evaluations,
                                                                                                           seed=seed)
-        
         if return_code == :MAXEVAL_REACHED
             return optimized_parameters, history
         else

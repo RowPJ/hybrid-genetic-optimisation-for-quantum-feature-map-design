@@ -192,7 +192,7 @@ function target_alignment_optimization_test(seed=22)
     results = optimize_kernel_target_alignment(parameterised_kernel, initial_parameters, cancer_dataset)
     return results
 end
-=#
+
 
 "Like target_alignment_optimization_test, but tests optimizing parameters for test set classification accuracy."
 function accuracy_optimization_test(seed=22)
@@ -210,6 +210,7 @@ function accuracy_optimization_test(seed=22)
     results = optimize_kernel_accuracy(parameterised_kernel, initial_parameters, cancer_dataset)
     return results
 end
+=#
 
 #TODO: complete this function
 function roc_curve_test()

@@ -21,6 +21,8 @@
 #     3. can create symbolic ArrayReg register with: symbolic_register(n) = ArrayReg(symbolic_zero_state(n))
 #     4. need to implement functions that 
 
+#TODO: use depth and qubit count values in decode_chromosome_yao and variants to ensure chromosome is the correct length
+
 #TODO: incorporate class weighting into model training and fitness 
 # calculation for unbalanced data sets. this would need to be managed
 # for the average margin metric as well as SVM creation, maybe elsewhere
@@ -414,7 +416,7 @@ function accuracy_metric_yao(model_struct, problem_data, kernel=model_struct.ker
     # unpack problem data for test points and labels
     (train_samples, test_samples, train_labels, test_labels) = problem_data
     # compute kernel outputs for test set points
-    test_sample_kernel_values =  compute_kernel_matrix(kernel, train_samples, test_samples)
+    test_sample_kernel_values = compute_kernel_matrix(kernel, train_samples, test_samples)
     # score model
     accuracy = score(model_struct.classifier, test_sample_kernel_values, test_labels)
     return accuracy
