@@ -172,46 +172,6 @@ function load_results(dataset_string, metric_string)
     (population, fitnesses, fitness_history)
 end
 
-###OUTDATED, expects to send a data set struct to optimize_kernel_target_alignment rather than a problem_data tuple
-#=
-"Use to test optimizing kernel target alignment.
-Depends on cancer accuracy results with 4 features,
-6 qubits, and depth 6 existing for them to be loaded."
-function target_alignment_optimization_test(seed=22)
-    row(m, i) = @view m[i, :]
-    to_rows(matrix) = [row(matrix, i) for i in 1:size(matrix)[1]]
-    
-    # load an optimized chromosome and create a parameterised kernel
-    cancer_acc_results = load_results("cancer", "accuracy")
-    best_individual = cancer_acc_results[1][4]
-    best_fitness = cancer_acc_results[2][4]
-    n_features = 4
-    parameterised_kernel, initial_parameters = decode_chromosome_parameterised_yao(best_individual, n_features, 6, 6)
-
-    # optimize kernel
-    results = optimize_kernel_target_alignment(parameterised_kernel, initial_parameters, cancer_dataset)
-    return results
-end
-
-
-"Like target_alignment_optimization_test, but tests optimizing parameters for test set classification accuracy."
-function accuracy_optimization_test(seed=22)
-    row(m, i) = @view m[i, :]
-    to_rows(matrix) = [row(matrix, i) for i in 1:size(matrix)[1]]
-    
-    # load an optimized chromosome and create a parameterised kernel
-    cancer_acc_results = load_results("cancer", "accuracy")
-    best_individual = cancer_acc_results[1][4]
-    best_fitness = cancer_acc_results[2][4]
-    n_features = 4
-    parameterised_kernel, initial_parameters = decode_chromosome_parameterised_yao(best_individual, n_features, 6, 6)
-
-    # optimize kernel
-    results = optimize_kernel_accuracy(parameterised_kernel, initial_parameters, cancer_dataset)
-    return results
-end
-=#
-
 #TODO: complete this function
 function roc_curve_test()
     pop, fit = load_results("digits", "accuracy")

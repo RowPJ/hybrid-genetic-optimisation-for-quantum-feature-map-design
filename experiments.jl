@@ -103,7 +103,8 @@ class CustomMutation(Mutation):
         return _X.astype(bool)
 
 # general version of experiment functions taking the pre-processed training data set in the arguments
-def genetic_solve_dataset_classification(samples, labels, feature_count, population_evaluator, seed=22, qubit_count=6, depth=6):
+def genetic_solve_dataset_classification(samples, labels, feature_count, population_evaluator, circuit_equality_test, seed=22, qubit_count=6, depth=6):
+    duplicate_elimination = KernelCircuitDuplicateElimination(qubit_count, feature_count, circuit_equality_test)
     #NSGA2 defaults to tournament selection
     #and rank and crowding survival
     algorithm = NSGA2(pop_size=100,
@@ -111,7 +112,7 @@ def genetic_solve_dataset_classification(samples, labels, feature_count, populat
                       sampling=get_sampling("bin_random"),
                       crossover=get_crossover("bin_two_point", prob=0.3),
                       mutation=CustomMutation(prob=0.7, index_prob=0.2), #get_mutation("bin_bitflip", prob=0.7),
-                      eliminate_duplicates=True)
+                      eliminate_duplicates=duplicate_elimination)
     problem = KernelCircuitProblem(evaluator=population_evaluator,
                                    feature_count=feature_count,
                                    qubit_count=qubit_count,
@@ -137,6 +138,7 @@ function genetic_solve_dataset_classification(dataset, population_evaluator; qub
                                                                                                dataset.training_labels,
                                                                                                dataset.feature_count,
                                                                                                population_evaluator,
+                                                                                               circuit_equals, # function for checking 2 circuits for equality
                                                                                                depth=depth,
                                                                                                qubit_count=qubit_count,
                                                                                                seed=seed)
@@ -166,152 +168,261 @@ function generate_genetic_metric_variation_experiment_functions(dataset)
     acc_experiment = timed(curry(genetic_solve_dataset_classification, dataset, evaluate_population_yao))
     margin_experiment = timed(curry(genetic_solve_dataset_classification, dataset, evaluate_population_yao_margin_metric))
     cross_validation_experiment = timed(curry(genetic_solve_dataset_classification, dataset, evaluate_population_yao_cross_validation))
-    acc_genetic_and_parameter_training_experiment = timed(curry(genetic_solve_dataset_classification, dataset, evaluate_population_yao_parameter_training_accuracy))
+    alignment_experiment = timed(curry(genetic_solve_dataset_classification, dataset, evaluate_population_yao_kernel_target_alignment))
+    alignment_approximation_experiment = timed(curry(genetic_solve_dataset_classification, dataset, evaluate_population_yao_kernel_target_alignment_split))
+    acc_genetic_and_parameter_training_experiment = timed(curry(genetic_solve_dataset_classification, dataset, evaluate_population_yao_parameter_training_rmse))
     acc_genetic_and_parameter_training_target_alignment_experiment = timed(curry(genetic_solve_dataset_classification, dataset, evaluate_population_yao_parameter_training_target_alignment))
-    return (acc_experiment, margin_experiment, cross_validation_experiment, acc_genetic_and_parameter_training_experiment, acc_genetic_and_parameter_training_target_alignment_experiment)
+    acc_dynamic_dataset_size_experiment = timed(curry(genetic_solve_dataset_classification, dataset, evaluate_population_yao_dynamic_dataset_size))
+    
+    return (acc_experiment, margin_experiment, cross_validation_experiment, alignment_experiment, alignment_approximation_experiment, acc_genetic_and_parameter_training_experiment, acc_genetic_and_parameter_training_target_alignment_experiment, acc_dynamic_dataset_size_experiment)
 end
 
 # define experiment functions for the convenience of running specific experiments individually
-solve_moons_accuracy, solve_moons_margin, solve_moons_cross_validation, solve_moons_genetic_and_parameter_training_accuracy, solve_moons_genetic_and_parameter_training_target_alignment = generate_genetic_metric_variation_experiment_functions(moons_dataset)
-solve_cancer_accuracy, solve_cancer_margin, solve_cancer_cross_validation, solve_cancer_genetic_and_parameter_training_accuracy, solve_cancer_genetic_and_parameter_training_target_alignment = generate_genetic_metric_variation_experiment_functions(cancer_dataset)
-solve_iris_accuracy, solve_iris_margin, solve_iris_cross_validation, solve_iris_genetic_and_parameter_training_accuracy, solve_iris_genetic_and_parameter_training_target_alignment = generate_genetic_metric_variation_experiment_functions(iris_dataset)
-solve_digits_accuracy, solve_digits_margin, solve_digits_cross_validation, solve_digits_genetic_and_parameter_training_accuracy, solve_digits_genetic_and_parameter_training_target_alignment = generate_genetic_metric_variation_experiment_functions(digits_dataset)
-solve_blobs_accuracy, solve_blobs_margin, solve_blobs_cross_validation, solve_blobs_genetic_and_parameter_training_accuracy, solve_blobs_genetic_and_parameter_training_target_alignment = generate_genetic_metric_variation_experiment_functions(blobs_dataset)
-solve_circles_accuracy, solve_circles_margin, solve_circles_cross_validation, solve_circles_genetic_and_parameter_training_accuracy, solve_circles_genetic_and_parameter_training_target_alignment = generate_genetic_metric_variation_experiment_functions(circles_dataset)
-solve_adhoc_accuracy, solve_adhoc_margin, solve_adhoc_cross_validation, solve_adhoc_genetic_and_parameter_training_accuracy, solve_adhoc_genetic_and_parameter_training_target_alignment = generate_genetic_metric_variation_experiment_functions(adhoc_dataset)
+solve_moons_accuracy, solve_moons_margin, solve_moons_cross_validation, solve_moons_alignment, solve_moons_alignment_approximation, solve_moons_genetic_and_parameter_training_rmse, solve_moons_genetic_and_parameter_training_target_alignment, solve_moons_dynamic_dataset_size = generate_genetic_metric_variation_experiment_functions(moons_dataset)
+solve_cancer_accuracy, solve_cancer_margin, solve_cancer_cross_validation, solve_cancer_alignment, solve_cancer_alignment_approximation, solve_cancer_genetic_and_parameter_training_rmse, solve_cancer_genetic_and_parameter_training_target_alignment, solve_cancer_dynamic_dataset_size = generate_genetic_metric_variation_experiment_functions(cancer_dataset)
+solve_iris_accuracy, solve_iris_margin, solve_iris_cross_validation, solve_iris_alignment, solve_iris_alignment_approximation, solve_iris_genetic_and_parameter_training_rmse, solve_iris_genetic_and_parameter_training_target_alignment, solve_iris_dynamic_dataset_size = generate_genetic_metric_variation_experiment_functions(iris_dataset)
+solve_digits_accuracy, solve_digits_margin, solve_digits_cross_validation, solve_digits_alignment, solve_digits_alignment_approximation, solve_digits_genetic_and_parameter_training_rmse, solve_digits_genetic_and_parameter_training_target_alignment, solve_digits_dynamic_dataset_size = generate_genetic_metric_variation_experiment_functions(digits_dataset)
+solve_blobs_accuracy, solve_blobs_margin, solve_blobs_cross_validation, solve_blobs_alignment, solve_blobs_alignment_approximation, solve_blobs_genetic_and_parameter_training_rmse, solve_blobs_genetic_and_parameter_training_target_alignment, solve_blobs_dynamic_dataset_size = generate_genetic_metric_variation_experiment_functions(blobs_dataset)
+solve_circles_accuracy, solve_circles_margin, solve_circles_cross_validation, solve_circles_alignment, solve_circles_alignment_approximation, solve_circles_genetic_and_parameter_training_rmse, solve_circles_genetic_and_parameter_training_target_alignment, solve_circles_dynamic_dataset_size = generate_genetic_metric_variation_experiment_functions(circles_dataset)
+solve_adhoc_accuracy, solve_adhoc_margin, solve_adhoc_cross_validation, solve_adhoc_alignment, solve_adhoc_alignment_approximation, solve_adhoc_genetic_and_parameter_training_rmse, solve_adhoc_genetic_and_parameter_training_target_alignment, solve_adhoc_dynamic_dataset_size = generate_genetic_metric_variation_experiment_functions(adhoc_dataset)
+solve_voice_accuracy, solve_voice_margin, solve_voice_cross_validation, solve_voice_alignment, solve_voice_alignment_approximation, solve_voice_genetic_and_parameter_training_rmse, solve_voice_genetic_and_parameter_training_target_alignment, solve_voice_dynamic_dataset_size = generate_genetic_metric_variation_experiment_functions(voice_dataset)
+solve_susy_accuracy, solve_susy_margin, solve_susy_cross_validation, solve_susy_alignment, solve_susy_alignment_approximation, solve_susy_genetic_and_parameter_training_rmse, solve_susy_genetic_and_parameter_training_target_alignment, solve_susy_dynamic_dataset_size = generate_genetic_metric_variation_experiment_functions(susy_dataset)
+solve_susy_hard_accuracy, solve_susy_hard_margin, solve_susy_hard_cross_validation, solve_susy_hard_alignment, solve_susy_hard_alignment_approximation, solve_susy_hard_genetic_and_parameter_training_rmse, solve_susy_hard_genetic_and_parameter_training_target_alignment, solve_susy_hard_dynamic_dataset_size = generate_genetic_metric_variation_experiment_functions(susy_hard_dataset)
 
-
-"Given a list of population individuals and a list of their corresponding fitness values,
-returns the index of the best performing individual measured by their accuracy metric
-or its substitute."
-function best_individual_index(population, fitnesses) #NOTE: could remove population argument from the argument list if it won't be needed in the future
-    # get the highest-accuracy individual
-    highest_accuracy = fitnesses[1][1]
-    smallest_size = fitnesses[1][2]
-    result_index = 1
-    for i in 2:length(population)
-        next_accuracy = fitnesses[i][1]
-        next_size = fitnesses[i][2]
-        # remember, use < to compare if an accuracy value is better, since
-        # more negative fitness corresponds to higher accuracy as the accuracy
-        # metrics were all negated to make the minimizing optimizer into a maximizer
-        # Conditional check passes if accuracy is better or if accuracy is the same but size is better
-        if next_accuracy < highest_accuracy || (next_accuracy == highest_accuracy && next_size < smallest_size)
-            highest_accuracy = next_accuracy
-            smallest_size = next_size
-            result_index = i
-        end
-    end
-    return result_index
-end
-
-#=
-#TODO: finish a generalised version of this function definition that works with an arbitrary data set
-"Trains circuits genetically to have high accuracy, then replaces the genetically-determined
-proportionality parameters with trainable real-valued parameters and trains them to maximise
-kernel target alignment. Saves the genetically trained results as well as the parameter optimized
-results."
-function moons_parameterised_genetic_combination_experiment(;seed=22)
-    row(m, i) = @view m[i, :]
-    to_rows(matrix) = [row(matrix, i) for i in 1:size(matrix)[1]]
-
-    # perform genetic optimization
-    (population, fitnesses, pymoo_result, fit_history) = solve_moons_classification(;seed=seed)
-
-    highest_accuracy_individual = population[best_individual_index(population, fitnesses)]
-
-    #train its parameters to maximise kernel target alignment
-    parameterised_kernel, initial_parameters = decode_chromosome_parameterised_yao(chromosome, 2, 6, 6) # for moons training, assuming 2 features, 6 qubits, and depth 6
-
-
-    # generate the validation data set
-    sample_count = 500
-    samples, labels = make_moons(n_samples=sample_count,
-                                 random_state=seed)
-end
-=#
-#TODO: 1. create a general function for testing a kernel on the validation part of a data set
-# 2. create a dispatch version that takes a chromosome and calls the first version with its kernel
-# 3. create a dispatch version that takes a chromosome and parameters and calls the first version with the parameters substituted into its kernel
-
-#=
-function parameter_training_experiment(dataset::Dataset; qubit_count=6, depth=6, max_evaluations=100, seed=22, genetic_metric_type="accuracy", parameter_metric_type="accuracy")
-    # load the genetic training results for the given data set
-    population, fitnesses, genetic_fitness_histories = load_results(dataset.name, genetic_metric_type)
-    # train the population with parameter based training
-    population_optimized_parameters, population_parameter_objective_histories = population_parameterised_training(population,
-                                                                                                        dataset;
-                                                                                                        qubit_count=qubit_count,
-                                                                                                        depth=depth,
-                                                                                                        max_evaluations=max_evaluations,
-                                                                                                        seed=seed,
-                                                                                                        metric_type=parameter_metric_type)
-    # return optimized parameters for use,
-    # return genetic fitness histories for graphing,
-    # and return parameter training objective histories for graphing
-    return population_optimized_parameters, genetic_fitness_histories, population_parameter_objective_histories
-end
-=#
 
 # run a bunch of experiments, saving results
 function main(seed=22)
-    @time begin
-        # first run all experiments of genetic training, saving results
-        for (fn, name) in zip([solve_moons_accuracy,
-                    solve_cancer_accuracy,
-                    solve_iris_accuracy,
-                    solve_digits_accuracy,
-                    solve_blobs_accuracy,
-                    solve_circles_accuracy,
-                    solve_adhoc_accuracy],
-                    ["moons",
-                    "cancer",
-                    "iris",
-                    "digits",
-                    "blobs",
-                    "circles",
-                    "adhoc"])
-              results = fn(;seed=seed)
+    function dynamic_dataset_size_approach_runs()
+        for (fn, name) in zip([
+                                solve_moons_dynamic_dataset_size,
+                                solve_cancer_dynamic_dataset_size,
+                                #solve_iris_dynamic_dataset_size,
+                                solve_digits_dynamic_dataset_size,
+                                #solve_blobs_dynamic_dataset_size,
+                                solve_circles_dynamic_dataset_size,
+                                solve_adhoc_dynamic_dataset_size,
+                                #solve_voice_dynamic_dataset_size,
+                                solve_susy_dynamic_dataset_size,
+                                solve_susy_hard_dynamic_dataset_size
+                                ],
+                                [
+                                "moons",
+                                "cancer",
+                                #"iris",
+                                "digits",
+                                #"blobs",
+                                "circles",
+                                "adhoc",
+                                #"voice", # doesn't work with approach 0 for dynamic dataset size due to a freeze for unknown reasons
+                                "susy",
+                                "susy_hard"
+                                ])
+            println("Solving $name, dynamic dataset size approach")
+            results = fn(;seed=seed)
+            println("Finished $name dynamic dataset size")
+            save_results(name, "dynamic_dataset_size", results)
+        end
+    end
+    function original_approach_runs()
+        # run all experiments of purely genetic training, saving results
+        for (fn, name) in zip([
+                                #solve_moons_accuracy,
+                                #solve_cancer_accuracy,
+                                #solve_iris_accuracy,
+                                solve_digits_accuracy,
+                                #solve_blobs_accuracy,
+                                #solve_circles_accuracy,
+                                #solve_adhoc_accuracy,
+                                #solve_voice_accuracy,
+                                #solve_susy_accuracy,
+                                #solve_susy_hard_accuracy
+                                ],
+                                [
+                                #"moons",
+                                #"cancer",
+                                #"iris",
+                                "digits",
+                                #"blobs",
+                                #"circles",
+                                #"adhoc",
+                                #"voice",
+                                #"susy",
+                                #"susy_hard"
+                                ])
+            println("Solving $name, original approach")
+            results = fn(;seed=seed)
             println("Finished $name accuracy")
             save_results(name, "accuracy", results)
         end
-        # second, run all experiments with the genetic training including parameter optimization for maximizing accuracy
-        for (fn, name) in zip([solve_moons_genetic_and_parameter_training_accuracy,
-                    solve_cancer_genetic_and_parameter_training_accuracy,
-                    solve_iris_genetic_and_parameter_training_accuracy,
-                    solve_digits_genetic_and_parameter_training_accuracy,
-                    solve_blobs_genetic_and_parameter_training_accuracy,
-                    solve_circles_genetic_and_parameter_training_accuracy,
-                    solve_adhoc_genetic_and_parameter_training_accuracy],
-                    ["moons",
-                    "cancer",
-                    "iris",
-                    "digits",
-                    "blobs",
-                    "circles",
-                    "adhoc"])
+    end
+    function alignment_metric_approach_runs()
+        # run all experiments of purely genetic training, saving results
+        for (fn, name) in zip([
+                                #solve_moons_alignment,
+                                #solve_cancer_alignment,
+                                #solve_iris_alignment,
+                                solve_digits_alignment,
+                                #solve_blobs_alignment,
+                                #solve_circles_alignment,
+                                #solve_adhoc_alignment,
+                                #solve_voice_alignment,
+                                #solve_susy_alignment,
+                                #solve_susy_hard_alignment
+                                ],
+                                [
+                                #"moons",
+                                #"cancer",
+                                #"iris",
+                                "digits",
+                                #"blobs",
+                                #"circles",
+                                #"adhoc",
+                                #"voice",
+                                #"susy",
+                                #"susy_hard"
+                                ])
+            println("Solving $name, alignment metric approach")
             results = fn(;seed=seed)
-            println("Finished $name accuracy with parameter training")
-            save_results(name, "accuracy_parameter_training", results)
+            println("Finished $name alignment metric")
+            save_results(name, "alignment", results)
         end
-        # third, run all experiments with the genetic training including parameter optimization for maximizing target alignment
-        for (fn, name) in zip([solve_moons_genetic_and_parameter_training_target_alignment,
-                    solve_cancer_genetic_and_parameter_training_target_alignment,
-                    solve_iris_genetic_and_parameter_training_target_alignment,
-                    solve_digits_genetic_and_parameter_training_target_alignment,
-                    solve_blobs_genetic_and_parameter_training_target_alignment,
-                    solve_circles_genetic_and_parameter_training_target_alignment,
-                    solve_adhoc_genetic_and_parameter_training_target_alignment],
-                    ["moons",
-                    "cancer",
-                    "iris",
-                    "digits",
-                    "blobs",
-                    "circles",
-                    "adhoc"])
+    end
+    function alignment_approximation_metric_approach_runs()
+        # run all experiments of purely genetic training, saving results
+        for (fn, name) in zip([
+                                #solve_moons_alignment_approximation,
+                                #solve_cancer_alignment_approximation,
+                                #solve_iris_alignment_approximation,
+                                solve_digits_alignment_approximation,
+                                #solve_blobs_alignment_approximation,
+                                #solve_circles_alignment_approximation,
+                                #solve_adhoc_alignment_approximation,
+                                #solve_voice_alignment_approximation,
+                                #solve_susy_alignment_approximation,
+                                #solve_susy_hard_alignment_approximation
+                                ],
+                                [
+                                #"moons",
+                                #"cancer",
+                                #"iris",
+                                "digits",
+                                #"blobs",
+                                #"circles",
+                                #"adhoc",
+                                #"voice",
+                                #"susy",
+                                #"susy_hard"
+                                ])
+            println("Solving $name, alignment approximation metric approach")
             results = fn(;seed=seed)
-            println("Finished $name accuracy with parameter training for target alignment")
+            println("Finished $name alignment approximation metric")
+            save_results(name, "alignment_approximation", results)
+        end
+    end
+    function rmse_approach_runs()
+        # run all experiments with the genetic training including parameter optimization for minimizing rmse
+        for (fn, name) in zip([
+                                solve_moons_genetic_and_parameter_training_rmse,
+                                solve_cancer_genetic_and_parameter_training_rmse,
+                                #solve_iris_genetic_and_parameter_training_rmse,
+                                solve_digits_genetic_and_parameter_training_rmse,
+                                #solve_blobs_genetic_and_parameter_training_rmse,
+                                solve_circles_genetic_and_parameter_training_rmse,
+                                solve_adhoc_genetic_and_parameter_training_rmse,
+                                #solve_voice_genetic_and_parameter_training_rmse,
+                                solve_susy_genetic_and_parameter_training_rmse,
+                                solve_susy_hard_genetic_and_parameter_training_rmse
+                                ],
+                                [
+                                "moons",
+                                "cancer",
+                                #"iris",
+                                "digits",
+                                #"blobs",
+                                "circles",
+                                "adhoc",
+                                #"voice",
+                                "susy",
+                                "susy_hard"
+                                ])
+        println("Solving $name, rmse")
+        results = fn(;seed=seed)
+        println("Finished $name accuracy with parameter training for RMSE minimization")
+        save_results(name, "rmse_parameter_training", results)
+        end
+    end
+    function alignment_approach_runs()
+        # run all experiments with the genetic training including parameter optimization for maximizing target alignment
+        for (fn, name) in zip([
+                                solve_moons_genetic_and_parameter_training_target_alignment,
+                                solve_cancer_genetic_and_parameter_training_target_alignment,
+                                #solve_iris_genetic_and_parameter_training_target_alignment,
+                                solve_digits_genetic_and_parameter_training_target_alignment,
+                                #solve_blobs_genetic_and_parameter_training_target_alignment,
+                                solve_circles_genetic_and_parameter_training_target_alignment,
+                                solve_adhoc_genetic_and_parameter_training_target_alignment,
+                                #solve_voice_genetic_and_parameter_training_target_alignment,
+                                solve_susy_genetic_and_parameter_training_target_alignment,
+                                solve_susy_hard_genetic_and_parameter_training_target_alignment
+                                ],
+                                [
+                                "moons",
+                                "cancer",
+                                #"iris",
+                                "digits",
+                                #"blobs",
+                                "circles",
+                                "adhoc",
+                                #"voice",
+                                "susy",
+                                "susy_hard"
+                                ])
+            println("Solving $name, alignment")
+            results = fn(;seed=seed)
+            println("Finished $name accuracy with parameter training for target alignment maximization")
             save_results(name, "alignment_parameter_training", results)
         end
+    end
+    function classical_rbf_approach()
+        for name in [
+                    "moons",
+                    "cancer",
+                    #"iris",
+                    "digits",
+                    #"blobs",
+                    "circles",
+                    "adhoc",
+                    #"voice",
+                    "susy",
+                    "susy_hard"
+                    ]
+            dataset::Dataset = dataset_map[name]
+            train_samples, test_samples, train_labels, test_labels = py"train_test_split"(dataset.training_samples, dataset.training_labels, train_size=0.7, random_state=seed, shuffle=true)
+            model = SVC(kernel="rbf", class_weight="balanced")
+            #fit!(model, train_samples, train_labels) #use same training data as genetically produced QSVM kernels
+            fit!(model, dataset.training_samples, dataset.training_labels) #use all data used in the genetic creation of QSVM kernels
+            println("Dataset: ", name)
+            println("Train acc: ", score(model,  train_samples, train_labels))
+            println("Test acc: ", score(model, test_samples, test_labels))
+            println("Validation acc: ", score(model, dataset.validation_samples, dataset.validation_labels))
+            println()
+        end
+    end
+    @time begin
+        # start approaches in parallel
+        #a = Dagger.@spawn original_approach_runs()
+        #b = Dagger.@spawn rmse_approach_runs()
+        #c = Dagger.@spawn alignment_approach_runs()
+        # wait for results
+        #fetch(a)
+        #fetch(b)
+        #fetch(c)
+        #dynamic_dataset_size_approach_runs()
+        original_approach_runs()
+        #rmse_approach_runs()
+        #alignment_approach_runs()
+        #classical_rbf_approach()
+        alignment_metric_approach_runs()
+        alignment_approximation_metric_approach_runs()
     end
 end

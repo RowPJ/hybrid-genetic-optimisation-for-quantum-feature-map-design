@@ -117,83 +117,6 @@ function decode_chromosome_parameterised_yao(chromosome, feature_count, qubit_co
     return substitute_parameters, extract_initial_parameters()
 end
 
-"Returns the alignment of two matrices.
-Check paper on training kernels to maximise target alignment
-for details."
-function matrix_alignment(a, b)
-    # NOTE on implementation: frobenius inner product operation is simply
-    # the sum of the product of the corresponding entries of 2 matrices,
-    # which is already what the julia dot (_⋅_) operator returns for matrices.
-    (a ⋅ b) / √((a ⋅ a) * (b ⋅ b))
-end
-
-#TODO: increase cpu utilization in this function (was low with a 6 qubit 6 depth circuit)
-# only 1 core was at max load, probably the one creating the tasks
-"Like compute_kernel_matrix but only for the symmetric case, and computing
-entries in parallel."
-function compute_kernel_matrix_parallel(kernel_block, samples)
-    dimension = length(samples)
-
-    # create matrix to store tasks in.
-    # the bottom half is not used, maybe this could
-    # be optimised to halve matrix memory use if it
-    # becomes an issue
-    tasks::Matrix{Dagger.EagerThunk} = Matrix(undef, dimension, dimension)
-    # create matrix to store result in (created here before
-    # the task submission loop as the main diagonal results
-    # are written directly in that loop)
-    result = zeros(Float64, (dimension, dimension))
-
-    # create kernel calculation tasks for half the matrix
-    @inbounds for (j, s1) in enumerate(samples)
-        # main diagonal is all 1.0's
-        result[j, j] = 1.0
-        # upper half of matrix is explicitly computed
-        @inbounds for i in 1:(j-1)
-            s2 = samples[i]
-            output_task = Dagger.@spawn apply_kernel(kernel_block, s2, s1)
-            tasks[i,j] = output_task
-        end
-    end
-
-    # wait on tasks and fill the result matrix
-    @inbounds for j in 1:dimension
-        @inbounds for i in 1:(j-1)
-            result[i, j] = fetch(tasks[i, j])
-            result[j, i] = result[i, j]
-        end
-    end
-    return result
-end
-
-"Scales labels by dividing them by the number of instances in their class.
-This is used when computing the kernel target alignment to correct for unbalanced
-datasets. Compare to the pennylane target alignment calculation to check correctness."
-function scale_labels(labels)
-    n_minus = count(==(-1), labels)
-    n_plus = length(labels) - n_minus
-    return [label == -1 ? label/n_minus : label/n_plus for label in labels]
-end
-
-"Returns the gram matrix of a hypothetical kernel that would optimally classify the labels."
-function create_oracle_matrix(labels, scale=true)
-    scaled_labels = scale ? scale_labels(labels) : labels
-    return scaled_labels * scaled_labels'
-end
-
-"Calculates and returns the target alignment for the argument kernel
-on the given samples and corresponding labels."
-function kernel_target_alignment(kernel, samples, labels, oracle_matrix=create_oracle_matrix(labels)) # here oracle_matrix is the outer product of the label row vector and label column vector
-    gram_matrix = compute_kernel_matrix(kernel, samples, samples)
-    return matrix_alignment(gram_matrix, oracle_matrix)
-end
-
-"Two argument version of the function that takes the matrix arguments directly to
-allow them to be re-used from computations elsewhere."
-function kernel_target_alignment(gram_matrix, oracle_matrix=nothing)
-    return matrix_alignment(gram_matrix, oracle_matrix)
-end
-
 "Optimizes a kernel to maximise kernel-target alignment. maxeval determines the maximum number of
 target alignment calls the optimizer can make."
 function optimize_kernel_target_alignment(parameterised_kernel, initial_parameters, problem_data; max_evaluations=100, seed=22, verbose=false)
@@ -255,10 +178,39 @@ function optimize_kernel_target_alignment(parameterised_kernel, initial_paramete
     return (final_parameters, final_objective_value, opt.numevals, objective_history, return_code)
 end
 
-"Optimizes a kernel to maximise classification accuracy. max_evaluations determines the maximum number of
-parameter tests the optimizer can perform. In this case that is the number of times the kernel can be
-used to train and test a model."
-function optimize_kernel_accuracy(parameterised_kernel, initial_parameters, problem_data; max_evaluations=100, seed=22, verbose=false)
+function model_root_mean_squared_error(model::TrainedModel, problem_data)
+    (train_samples, test_samples, train_labels, test_labels) = problem_data
+    squared_errors_sum::Float64 = 0.0
+    num_samples::Int64 = length(train_labels)# + length(test_labels)
+    num_plus::Float64 = count(==(1), train_labels)# + count(==(1), test_labels)
+    num_minus::Float64 = num_samples - num_plus
+
+    function accumulate_errors(decision_function_outputs, labels)
+        for (output, label) in zip(decision_function_outputs, labels)
+            # only count errors from samples not reaching the output value of the correct label.
+            # scale errors down by the number of members in the class to balance contributions by each class.
+            if (label == -1 && output > -1)
+                squared_errors_sum += (label - output)^2 / num_minus
+            elseif (label == 1 && output < 1)
+                squared_errors_sum += (label - output)^2 / num_plus
+            end
+        end
+    end
+    train_set_outputs = decision_function(model.classifier, model.gram_matrix)
+    #test_kernel_outputs = compute_kernel_matrix(model.kernel, model.training_set, test_samples)
+    #test_set_outputs = decision_function(model.classifier, test_kernel_outputs)
+    accumulate_errors(train_set_outputs, train_labels)
+    #accumulate_errors(test_set_outputs, test_labels)
+    # scale up error by the number of samples to reverse class-based weighting
+    squared_errors_sum *= num_samples
+    # calculate root of mean error
+    return sqrt(squared_errors_sum / num_samples)
+end
+
+"Optimizes a kernel to minimize root mean squared error (RMSE) between the classifier outputs and the data labels for training data,
+assuming the class labels are -1 and 1. max_evaluations determines the maximum number of parameter tests the optimizer can perform.
+In this case that is the number of times the kernel can be used to train and test a model."
+function optimize_kernel_rmse(parameterised_kernel, initial_parameters, problem_data; max_evaluations=100, seed=22, verbose=false)
 
     (train_samples, test_samples, train_labels, test_labels) = problem_data
 
@@ -285,16 +237,16 @@ function optimize_kernel_accuracy(parameterised_kernel, initial_parameters, prob
         
         kernel = parameterised_kernel(parameters)
         model = train_model(problem_data, kernel)
-        objective = accuracy_metric_yao(model, problem_data)
+        objective = model_root_mean_squared_error(model, problem_data)
 
         # record the objective value for convergence analysis
         push!(objective_history, objective)
         if verbose
-            println("Evaluation: $evaluation_counter\nAccuracy: $objective\nParameters: $parameters\n")
+            println("Evaluation: $evaluation_counter\nRMSE: $objective\nParameters: $parameters\n")
         end
         return objective
     end
-    opt.max_objective = progress_objective
+    opt.min_objective = progress_objective
     # set maximum number of fitness evaluations
     opt.maxeval = max_evaluations
     # optimize parameters
@@ -303,35 +255,15 @@ function optimize_kernel_accuracy(parameterised_kernel, initial_parameters, prob
     return (final_parameters, final_objective_value, opt.numevals, objective_history, return_code)
 end
 
-#TODO: find a way to define the Dataset struct in all workers without duplicating the definition from datasets.jl
-#=
-function optimize_kernel_accuracy(parameterised_kernel, initial_parameters, dataset::Dataset; seed=22, kwargs...)
-    # get the training data from the dataset
-    samples, labels = dataset.training_samples, dataset.training_labels
-    (train_samples, test_samples, train_labels, test_labels) = py"train_test_split"(samples,
-                                                                                    labels,
-                                                                                    train_size=0.7,
-                                                                                    random_state=seed,
-                                                                                    shuffle=true)
-    problem_data = (train_samples, test_samples, train_labels, test_labels)
-    # forward to the method that takes the samples and labels directly
-    return optimize_kernel_accuracy(parameterised_kernel, initial_parameters, problem_data; kwargs...)
-end
-=#
-
-#TODO: try optimizing target alignment or average margin size instead of accuracy
-# so that there is more oppurtunity for improvement on smaller data sets.
-# accuracy converges too quickly for small data sets since outliers can make
-# up a relatively large percent of the data with small data sets
 "Takes a vector of individuals and trains them using parameter
 based training to better classify the dataset. Returns the trained
 parameter values and fitness evaluation histories of the individuals."
-function population_parameterised_training(population, dataset, feature_count; qubit_count=6, depth=6, max_evaluations=100, seed=22, metric_type="accuracy")
+function population_parameterised_training(population, dataset, feature_count; qubit_count=6, depth=6, max_evaluations=100, seed=22, metric_type="rmse")
     #NOTE: max_evaluations specifies the maximum fitness evaluations per individual, not over the whole
     #population.
     #NOTE: although the argument name is dataset, it takes a value of problem_data form
 
-    metrics_to_target_optimizers = Dict("accuracy"=>optimize_kernel_accuracy, "target_alignment"=>optimize_kernel_target_alignment)
+    metrics_to_target_optimizers = Dict("rmse"=>optimize_kernel_rmse, "target_alignment"=>optimize_kernel_target_alignment)
     target_optimizer = metrics_to_target_optimizers[metric_type]
     
     function process_individual(chromosome)
@@ -355,20 +287,17 @@ function population_parameterised_training(population, dataset, feature_count; q
 
     tasks = [Dagger.@spawn process_individual(c) for c in population]
     outputs = fetch.(tasks)
-    #TODO: parallelise this loop
     population_final_parameters::Vector{Vector{Float64}} = []
     histories::Vector{Vector{Float64}} = []
     for (params, hist) in outputs
         push!(population_final_parameters, params)
         push!(histories, hist)
     end
-    #=
-    for c in population
-        params, hist = process_individual(c)
-        push!(population_final_parameters, params)
-        push!(histories, hist)
+    if metric_type == "rmse"
+        println("Min RMSE: $(minimum(x->x[end], histories))")
+    elseif metric_type == "target_alignment"
+        println("Max kernel-target alignment: $(maximum(x->x[end], histories))")
     end
-    =#
 
     return population_final_parameters, histories
 end

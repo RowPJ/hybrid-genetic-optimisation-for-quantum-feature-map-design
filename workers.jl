@@ -36,6 +36,7 @@ using Yao, CuYao, GPUArrays
 using Distributed, Dagger
 using PyCall
 using ScikitLearn
+using Plots, Compose, StatsPlots
 
 # import SVC class from python
 @sk_import svm: (SVC) # equivalent to "from sklearn.svm import SVC" in python
@@ -187,6 +188,40 @@ function decode_chromosome_yao(chromosome, feature_count, qubit_count, depth; pl
     (data1, data2) -> chain(feature_map(data1), adjoint_feature_map(data2))
 end
 
+"Returns a boolean indicating whether the input chromosomes describe the same circuit."
+function circuit_equals(chromosome_1, chromosome_2, qubit_count, feature_count)
+    next_qubit_index(q) = q % qubit_count + 1
+    bits_per_gate = 5
+    # integers indicate [hadamard, cnot, identity, rx, rz, identity, identity, ry]
+    block_cases::Vector{Int64} = [0, 1, 2, 3, 4, 2, 2, 5]
+    # h is the index within the chromosome that the group starts at.
+    for h in range(start=1, step=bits_per_gate, stop=length(chromosome_1))
+        
+        # if the proportionality parameter values are different, the circuits are different
+        # (this happens iff the lookup indices are different)
+        proportionality_parameter_index_1::Int64 = (chromosome_1[h+3]*2 + chromosome_1[h+4]) + 1 #+1 for 1 based indexing
+        proportionality_parameter_index_2::Int64 = (chromosome_2[h+3]*2 + chromosome_2[h+4]) + 1 #+1 for 1 based indexing
+        if proportionality_parameter_index_1 != proportionality_parameter_index_2
+            return false
+        end
+
+        # if the block types being applied on this qubit and layer are different, the circuits are different
+        mapping_index_1::Int64 = (chromosome_1[h]*4 + chromosome_1[h+1]*2 + chromosome_1[h+2]) + 1 #+1 for 1 based indexing
+        mapping_index_2::Int64 = (chromosome_2[h]*4 + chromosome_2[h+1]*2 + chromosome_2[h+2]) + 1 #+1 for 1 based indexing
+        # gates could be different only if mapping indices are not the same
+        if mapping_index_1 != mapping_index_2
+            # look up circuit blocks that would be placed
+            block_case_1::Int64 = @inbounds block_cases[mapping_index_1]
+            block_case_2::Int64 = @inbounds block_cases[mapping_index_2]
+            # check if circuit blocks to place are the same
+            if block_case_1 != block_case_2
+                return false
+            end
+        end
+    end
+    # finally return true to indicate circuits had no differences
+    return true
+end
 
 # convenience for getting zero amplitude no matter
 # whether the register's statevector is stored on
@@ -325,12 +360,72 @@ function compute_kernel_matrix(kernel_block, training_samples, other_samples)
 end
 
 
+"Like compute_kernel_matrix but computing entries in parallel."
+function compute_kernel_matrix_parallel(kernel_block, samples, other_samples)
+    
+    function compute_asymmetric_kernel_matrix_parallel(kernel, training_samples, other_samples)
+        M = length(other_samples)
+        N = length(training_samples)
+        result = zeros(Float64, (M, N))
+        tasks = Matrix{Dagger.EagerThunk}(undef, M, N)
+        @inbounds for (j, s2) in enumerate(training_samples)
+            @inbounds for (i, s1) in enumerate(other_samples)
+                output_task = Dagger.@spawn apply_kernel(kernel_block, s1, s2)
+                tasks[i,j] = output_task
+            end
+        end
+        for j in 1:N
+            for i in 1:M
+                result[i, j] = fetch(tasks[i, j])
+            end
+        end
+        return result
+    end
+
+    if samples != other_samples
+        return compute_asymmetric_kernel_matrix_parallel(kernel_block, samples, other_samples)
+    end
+    dimension = length(samples)
+
+    # create matrix to store tasks in.
+    # the bottom half is not used, maybe this could
+    # be optimised to halve matrix memory use if it
+    # becomes an issue
+    tasks = Matrix{Dagger.EagerThunk}(undef, dimension, dimension)
+    # create matrix to store result in (created here before
+    # the task submission loop as the main diagonal results
+    # are written directly in that loop)
+    result = zeros(Float64, (dimension, dimension))
+
+    # create kernel calculation tasks for half the matrix
+    @inbounds for (j, s1) in enumerate(samples)
+        # main diagonal is all 1.0's
+        result[j, j] = 1.0
+        # upper half of matrix is explicitly computed
+        @inbounds for i in 1:(j-1)
+            s2 = samples[i]
+            output_task = Dagger.@spawn apply_kernel(kernel_block, s2, s1)
+            tasks[i,j] = output_task
+        end
+    end
+
+    # wait on tasks and fill the result matrix
+    @inbounds for j in 1:dimension
+        @inbounds for i in 1:(j-1)
+            result[i, j] = fetch(tasks[i, j])
+            result[j, i] = result[i, j]
+        end
+    end
+    return result
+end
+
 "Calculates size penalty for the chromosome.
-The formula is (N_Local + 2*N_CNOT) / N_Qubits,
+The formula is (N_Local + cnot_weight_coefficient*N_CNOT) / N_Qubits,
 where N_Local is the number of local gates, N_CNOT
 is the number of CNOT gates, and N_Qubits is the
 number of qubits in the circuit."
 function size_metric(chromosome, qubit_count, count_identities=false)
+    cnot_weight_coefficient = 2 #This has a value of 2 in the original work.
     n_cnot = 0
     n_local = 0
     
@@ -357,7 +452,7 @@ function size_metric(chromosome, qubit_count, count_identities=false)
             n_local += 1
         end
     end
-    return (n_local + 2*n_cnot) / qubit_count
+    return (n_local + cnot_weight_coefficient*n_cnot) / qubit_count
 end
 
 
@@ -373,6 +468,7 @@ struct TrainedModel
     kernel::Any # real type is a function of 2 arguments that returns a circuit block
     gram_matrix::Matrix{Float64}
     training_set::Vector{Vector{Float64}}
+    training_labels::Vector{Int64}
 end
 
 "Returns the classifier outputs from a trained model
@@ -383,6 +479,21 @@ function classify(model::TrainedModel, points)
                                    model.training_set,
                                    points)
     return predict(model.classifier, matrix)
+end
+
+function classify_parallel(model::TrainedModel, points)
+    matrix = compute_kernel_matrix_parallel(model.kernel, model.training_set, points)
+    return predict(model.classifier, matrix)
+end
+
+function accuracy(model::TrainedModel, points, labels)
+    outputs = classify(model, points)
+    return count(((a, b),) -> a == b, zip(outputs, labels)) / length(labels)
+end
+
+function accuracy_parallel(model::TrainedModel, points, labels)
+    outputs = classify_parallel(model, points)
+    return count(((a, b),) -> a == b, zip(outputs, labels)) / length(labels)
 end
 
 "Converts Int64 labels to Float64 values of +1.0 and -1.0."
@@ -402,12 +513,28 @@ function train_model(problem_data, kernel, seed=22)
     # compute gram matrix
     gram_matrix = compute_kernel_matrix(kernel, train_samples, train_samples)
     # create model with sklearn
-    model = SVC(kernel="precomputed")
+    model = SVC(kernel="precomputed", class_weight="balanced")
     # fit model
     fit!(model, gram_matrix, train_labels)
     # group together the data needed
     # to classify with the model.
-    return TrainedModel(model, kernel, gram_matrix, train_samples)
+    return TrainedModel(model, kernel, gram_matrix, train_samples, train_labels)
+end
+function train_model(samples, labels::Vector{T}, kernel, seed=22) where {T}
+    # set python's random seed
+    np.random.seed(seed)
+    # unpack problem data
+    train_samples = samples
+    train_labels = labels
+    # compute gram matrix
+    gram_matrix = compute_kernel_matrix(kernel, train_samples, train_samples)
+    # create model with sklearn
+    model = SVC(kernel="precomputed", class_weight="balanced")
+    # fit model
+    fit!(model, gram_matrix, train_labels)
+    # group together the data needed
+    # to classify with the model.
+    return TrainedModel(model, kernel, gram_matrix, train_samples, train_labels)
 end
 
 
@@ -524,7 +651,7 @@ function fitness_yao_symbolic(chromosome, feature_count, qubit_count, depth, pro
         gram_matrix = compute_kernel_matrix_symbolic(train_samples, train_samples)
         model = SVC(kernel="precomputed")
         fit!(model, gram_matrix, train_labels)
-        return TrainedModel(model, kernel, gram_matrix, train_samples)
+        return TrainedModel(model, kernel, gram_matrix, train_samples, train_labels)
     end
     function accuracy_metric_yao_symbolic(model_struct, problem_data)
         (train_samples, test_samples, train_labels, test_labels) = problem_data
@@ -557,6 +684,72 @@ function fitness_yao_margin(chromosome, feature_count, qubit_count, depth, probl
     margin_metric = margin_width_metric_yao(model_struct, problem_data)
     # return the metrics
     return (margin_metric, weighted_size_metric(sm, acc), acc)
+end
+
+"Returns the alignment of two matrices.
+Check paper on training kernels to maximise target alignment
+for details."
+function matrix_alignment(a, b)
+    # NOTE on implementation: frobenius inner product operation is simply
+    # the sum of the product of the corresponding entries of 2 matrices,
+    # which is already what the julia dot (_⋅_) operator returns for matrices.
+    (a ⋅ b) / √((a ⋅ a) * (b ⋅ b))
+end
+
+"Scales labels by dividing them by the number of instances in their class.
+This is used when computing the kernel target alignment to correct for unbalanced
+datasets. Compare to the pennylane target alignment calculation to check correctness."
+function scale_labels(labels)
+    n_minus = count(==(-1), labels)
+    n_plus = length(labels) - n_minus
+    return [label == -1 ? label/n_minus : label/n_plus for label in labels]
+end
+
+"Returns the gram matrix of a hypothetical kernel that would optimally classify the training data."
+function create_oracle_matrix(labels, scale=true)
+    scaled_labels = scale ? scale_labels(labels) : labels
+    return scaled_labels * scaled_labels'
+end
+
+"Calculates and returns the target alignment for the argument kernel
+on the given samples and corresponding labels."
+function kernel_target_alignment(kernel, samples, labels, oracle_matrix=create_oracle_matrix(labels)) # here oracle_matrix is the outer product of the label row vector and label column vector
+    gram_matrix = compute_kernel_matrix(kernel, samples, samples)
+    return matrix_alignment(gram_matrix, oracle_matrix)
+end
+
+"Two argument version of the function that takes the matrix arguments directly to
+allow them to be re-used from computations elsewhere."
+function kernel_target_alignment(gram_matrix, oracle_matrix=nothing)
+    return matrix_alignment(gram_matrix, oracle_matrix)
+end
+
+"Calculates fitness of a single solution."
+function fitness_yao_kernel_target_alignment(chromosome, feature_count, qubit_count, depth, samples, labels, oracle_matrix, seed=22)
+    # create the kernel block constructor from the chromosome and circuit details
+    kernel = decode_chromosome_yao(chromosome, feature_count, qubit_count, depth)
+    # train a model using the kernel, problem data, and seed
+    #model_struct = train_model(samples, labels, kernel, seed)
+    # calculate some fitness metrics
+    sm = size_metric(chromosome, qubit_count)
+    am = kernel_target_alignment(kernel, samples, labels, oracle_matrix)
+    #margin_metric = margin_width_metric_yao(model_struct, problem_data)
+    # return the metrics
+    return (am, sm, 0)
+end
+
+"Approximate alignment over the whole training set by calculating alignment
+over complementary disjoint subsets of the training set."
+function fitness_yao_kernel_target_alignment_split(chromosome, feature_count, qubit_count, depth, sample_splits, label_splits, oracle_matrices, seed=22)
+    kernel = decode_chromosome_yao(chromosome, feature_count, qubit_count, depth)
+    sm = size_metric(chromosome, qubit_count)
+    alignment_sum = 0.0
+    for (samples, labels, oracle_matrix) in zip(sample_splits, label_splits, oracle_matrices)
+        #model_struct = train_model(samples, labels, kernel, seed)
+        am = kernel_target_alignment(kernel, samples, labels, oracle_matrix)
+        alignment_sum += am
+    end
+    return (alignment_sum/length(label_splits), sm, 0)
 end
 
 "Calculates the fitness of a chromosome given problem data being a tuple with a vector of all
@@ -619,13 +812,13 @@ function fitness_yao_cross_validation(chromosome, feature_count, qubit_count, de
     return (mean(metric_vectors[1]), mean(metric_vectors[2]), mean(metric_vectors[3]))
 end
 
-function fitness_yao_parameter_training_accuracy(chromosome, feature_count, qubit_count, depth,
-                                                 problem_data, seed=22, max_parameter_training_evaluations=20)
+function fitness_yao_parameter_training_rmse(chromosome, feature_count, qubit_count, depth,
+                                            problem_data, seed=22, max_parameter_training_evaluations=100)
     # create the parameterised kernel block constructor from the chromosome and circuit details
     parameterised_kernel, initial_parameters = decode_chromosome_parameterised_yao(chromosome, feature_count, qubit_count, depth)
     
     #_ is to ignore return objective value history
-    final_parameters, final_objective_value, num_evals, _, return_code = optimize_kernel_accuracy(parameterised_kernel, initial_parameters, problem_data; seed=seed, max_evaluations=max_parameter_training_evaluations)
+    final_parameters, final_objective_value, num_evals, _, return_code = optimize_kernel_rmse(parameterised_kernel, initial_parameters, problem_data; seed=seed, max_evaluations=max_parameter_training_evaluations)
 
     # create the kernel circuit constructor for 2 data points by substituting the final parameters
     final_kernel = parameterised_kernel(final_parameters)
@@ -647,7 +840,7 @@ end
 # "device!(id) do ... end"  on each worker, where id is the GPU's index,
 # with GPU's indexed from 0
 function fitness_yao_parameter_training_target_alignment(chromosome, feature_count, qubit_count, depth,
-                                                         problem_data, seed=22, max_parameter_training_evaluations=20)
+                                                         problem_data, seed=22, max_parameter_training_evaluations=100)
     # create the parameterised kernel block constructor from the chromosome and circuit details
     parameterised_kernel, initial_parameters = decode_chromosome_parameterised_yao(chromosome, feature_count, qubit_count, depth)
 
