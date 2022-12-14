@@ -1,5 +1,0 @@
-*animate change in ROC curve over parameter training iterations (using iterations as time dimension)
-	*can use as another metric for showing improvement of the classifier
-
-*animate change in multi-objective fitness values with genetic training iterations (using iterations as time dimension)
-	*can use this for convergence evaluation
