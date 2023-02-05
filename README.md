@@ -1,4 +1,4 @@
-# masters-project
+# hybrid-genetic-optimisation-for-quantum-feature-map-design
 
 Steps:
 1: Extract the diagrams and results zip files to place the diagrams and results folders into the same directory as the source files.
