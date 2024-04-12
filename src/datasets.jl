@@ -732,10 +732,10 @@ function load_all_datasets()
     load_circles()
     println("Loading adhoc")
     load_adhoc()
-    println("Loading voice")
-    load_voice()
-    println("Loading susy_and_susy_hard")
-    load_susy_and_susy_hard()
+    #println("Loading voice")
+    #load_voice()
+    #println("Loading susy_and_susy_hard")
+    #load_susy_and_susy_hard()
 end
 
 load_all_datasets()
@@ -748,6 +748,7 @@ dataset_map = Dict("moons"=>moons_dataset,
                    "blobs"=>blobs_dataset,
                    "circles"=>circles_dataset,
                    "adhoc"=>adhoc_dataset,
-                   "voice"=>voice_dataset,
-                   "susy"=>susy_dataset,
-                   "susy_hard"=>susy_hard_dataset)
+                   #"voice"=>voice_dataset,
+                   #"susy"=>susy_dataset,
+                   #"susy_hard"=>susy_hard_dataset
+                   )

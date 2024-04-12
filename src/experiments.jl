@@ -185,7 +185,7 @@ solve_digits_accuracy, solve_digits_margin, solve_digits_cross_validation, solve
 solve_blobs_accuracy, solve_blobs_margin, solve_blobs_cross_validation, solve_blobs_alignment, solve_blobs_alignment_approximation, solve_blobs_genetic_and_parameter_training_rmse, solve_blobs_genetic_and_parameter_training_target_alignment, solve_blobs_dynamic_dataset_size = generate_genetic_metric_variation_experiment_functions(blobs_dataset)
 solve_circles_accuracy, solve_circles_margin, solve_circles_cross_validation, solve_circles_alignment, solve_circles_alignment_approximation, solve_circles_genetic_and_parameter_training_rmse, solve_circles_genetic_and_parameter_training_target_alignment, solve_circles_dynamic_dataset_size = generate_genetic_metric_variation_experiment_functions(circles_dataset)
 solve_adhoc_accuracy, solve_adhoc_margin, solve_adhoc_cross_validation, solve_adhoc_alignment, solve_adhoc_alignment_approximation, solve_adhoc_genetic_and_parameter_training_rmse, solve_adhoc_genetic_and_parameter_training_target_alignment, solve_adhoc_dynamic_dataset_size = generate_genetic_metric_variation_experiment_functions(adhoc_dataset)
-solve_voice_accuracy, solve_voice_margin, solve_voice_cross_validation, solve_voice_alignment, solve_voice_alignment_approximation, solve_voice_genetic_and_parameter_training_rmse, solve_voice_genetic_and_parameter_training_target_alignment, solve_voice_dynamic_dataset_size = generate_genetic_metric_variation_experiment_functions(voice_dataset)
+#solve_voice_accuracy, solve_voice_margin, solve_voice_cross_validation, solve_voice_alignment, solve_voice_alignment_approximation, solve_voice_genetic_and_parameter_training_rmse, solve_voice_genetic_and_parameter_training_target_alignment, solve_voice_dynamic_dataset_size = generate_genetic_metric_variation_experiment_functions(voice_dataset)
 solve_susy_accuracy, solve_susy_margin, solve_susy_cross_validation, solve_susy_alignment, solve_susy_alignment_approximation, solve_susy_genetic_and_parameter_training_rmse, solve_susy_genetic_and_parameter_training_target_alignment, solve_susy_dynamic_dataset_size = generate_genetic_metric_variation_experiment_functions(susy_dataset)
 solve_susy_hard_accuracy, solve_susy_hard_margin, solve_susy_hard_cross_validation, solve_susy_hard_alignment, solve_susy_hard_alignment_approximation, solve_susy_hard_genetic_and_parameter_training_rmse, solve_susy_hard_genetic_and_parameter_training_target_alignment, solve_susy_hard_dynamic_dataset_size = generate_genetic_metric_variation_experiment_functions(susy_hard_dataset)
 
@@ -202,8 +202,8 @@ function main(seed=22)
                                 solve_circles_dynamic_dataset_size,
                                 solve_adhoc_dynamic_dataset_size,
                                 #solve_voice_dynamic_dataset_size,
-                                solve_susy_dynamic_dataset_size,
-                                solve_susy_hard_dynamic_dataset_size
+                                #solve_susy_dynamic_dataset_size,
+                                #solve_susy_hard_dynamic_dataset_size
                                 ],
                                 [
                                 "moons",
@@ -214,8 +214,8 @@ function main(seed=22)
                                 "circles",
                                 "adhoc",
                                 #"voice", # doesn't work with approach 0 for dynamic dataset size due to a freeze for unknown reasons
-                                "susy",
-                                "susy_hard"
+                                #"susy",
+                                #"susy_hard"
                                 ])
             println("Solving $name, dynamic dataset size approach")
             results = fn(;seed=seed)
@@ -226,25 +226,25 @@ function main(seed=22)
     function original_approach_runs()
         # run all experiments of purely genetic training, saving results
         for (fn, name) in zip([
-                                #solve_moons_accuracy,
-                                #solve_cancer_accuracy,
-                                #solve_iris_accuracy,
+                                solve_moons_accuracy,
+                                solve_cancer_accuracy,
+                                solve_iris_accuracy,
                                 solve_digits_accuracy,
                                 #solve_blobs_accuracy,
-                                #solve_circles_accuracy,
-                                #solve_adhoc_accuracy,
+                                solve_circles_accuracy,
+                                solve_adhoc_accuracy,
                                 #solve_voice_accuracy,
                                 #solve_susy_accuracy,
                                 #solve_susy_hard_accuracy
                                 ],
                                 [
-                                #"moons",
-                                #"cancer",
-                                #"iris",
+                                "moons",
+                                "cancer",
+                                "iris",
                                 "digits",
                                 #"blobs",
-                                #"circles",
-                                #"adhoc",
+                                "circles",
+                                "adhoc",
                                 #"voice",
                                 #"susy",
                                 #"susy_hard"
@@ -258,25 +258,25 @@ function main(seed=22)
     function alignment_metric_approach_runs()
         # run all experiments of purely genetic training, saving results
         for (fn, name) in zip([
-                                #solve_moons_alignment,
-                                #solve_cancer_alignment,
-                                #solve_iris_alignment,
+                                solve_moons_alignment,
+                                solve_cancer_alignment,
+                                solve_iris_alignment,
                                 solve_digits_alignment,
                                 #solve_blobs_alignment,
-                                #solve_circles_alignment,
-                                #solve_adhoc_alignment,
+                                solve_circles_alignment,
+                                solve_adhoc_alignment,
                                 #solve_voice_alignment,
                                 #solve_susy_alignment,
                                 #solve_susy_hard_alignment
                                 ],
                                 [
-                                #"moons",
-                                #"cancer",
-                                #"iris",
+                                "moons",
+                                "cancer",
+                                "iris",
                                 "digits",
                                 #"blobs",
-                                #"circles",
-                                #"adhoc",
+                                "circles",
+                                "adhoc",
                                 #"voice",
                                 #"susy",
                                 #"susy_hard"
@@ -290,25 +290,25 @@ function main(seed=22)
     function alignment_approximation_metric_approach_runs()
         # run all experiments of purely genetic training, saving results
         for (fn, name) in zip([
-                                #solve_moons_alignment_approximation,
-                                #solve_cancer_alignment_approximation,
-                                #solve_iris_alignment_approximation,
+                                solve_moons_alignment_approximation,
+                                solve_cancer_alignment_approximation,
+                                solve_iris_alignment_approximation,
                                 solve_digits_alignment_approximation,
                                 #solve_blobs_alignment_approximation,
-                                #solve_circles_alignment_approximation,
-                                #solve_adhoc_alignment_approximation,
+                                solve_circles_alignment_approximation,
+                                solve_adhoc_alignment_approximation,
                                 #solve_voice_alignment_approximation,
                                 #solve_susy_alignment_approximation,
                                 #solve_susy_hard_alignment_approximation
                                 ],
                                 [
-                                #"moons",
-                                #"cancer",
-                                #"iris",
+                                "moons",
+                                "cancer",
+                                "iris",
                                 "digits",
                                 #"blobs",
-                                #"circles",
-                                #"adhoc",
+                                "circles",
+                                "adhoc",
                                 #"voice",
                                 #"susy",
                                 #"susy_hard"
@@ -324,26 +324,26 @@ function main(seed=22)
         for (fn, name) in zip([
                                 solve_moons_genetic_and_parameter_training_rmse,
                                 solve_cancer_genetic_and_parameter_training_rmse,
-                                #solve_iris_genetic_and_parameter_training_rmse,
+                                solve_iris_genetic_and_parameter_training_rmse,
                                 solve_digits_genetic_and_parameter_training_rmse,
                                 #solve_blobs_genetic_and_parameter_training_rmse,
                                 solve_circles_genetic_and_parameter_training_rmse,
                                 solve_adhoc_genetic_and_parameter_training_rmse,
                                 #solve_voice_genetic_and_parameter_training_rmse,
-                                solve_susy_genetic_and_parameter_training_rmse,
-                                solve_susy_hard_genetic_and_parameter_training_rmse
+                                #solve_susy_genetic_and_parameter_training_rmse,
+                                #solve_susy_hard_genetic_and_parameter_training_rmse
                                 ],
                                 [
                                 "moons",
                                 "cancer",
-                                #"iris",
+                                "iris",
                                 "digits",
                                 #"blobs",
                                 "circles",
                                 "adhoc",
                                 #"voice",
-                                "susy",
-                                "susy_hard"
+                                #"susy",
+                                #"susy_hard"
                                 ])
         println("Solving $name, rmse")
         results = fn(;seed=seed)
@@ -356,26 +356,26 @@ function main(seed=22)
         for (fn, name) in zip([
                                 solve_moons_genetic_and_parameter_training_target_alignment,
                                 solve_cancer_genetic_and_parameter_training_target_alignment,
-                                #solve_iris_genetic_and_parameter_training_target_alignment,
+                                solve_iris_genetic_and_parameter_training_target_alignment,
                                 solve_digits_genetic_and_parameter_training_target_alignment,
                                 #solve_blobs_genetic_and_parameter_training_target_alignment,
                                 solve_circles_genetic_and_parameter_training_target_alignment,
                                 solve_adhoc_genetic_and_parameter_training_target_alignment,
                                 #solve_voice_genetic_and_parameter_training_target_alignment,
-                                solve_susy_genetic_and_parameter_training_target_alignment,
-                                solve_susy_hard_genetic_and_parameter_training_target_alignment
+                                #solve_susy_genetic_and_parameter_training_target_alignment,
+                                #solve_susy_hard_genetic_and_parameter_training_target_alignment
                                 ],
                                 [
                                 "moons",
                                 "cancer",
-                                #"iris",
+                                "iris",
                                 "digits",
                                 #"blobs",
                                 "circles",
                                 "adhoc",
                                 #"voice",
-                                "susy",
-                                "susy_hard"
+                                #"susy",
+                                #"susy_hard"
                                 ])
             println("Solving $name, alignment")
             results = fn(;seed=seed)
@@ -387,14 +387,14 @@ function main(seed=22)
         for name in [
                     "moons",
                     "cancer",
-                    #"iris",
+                    "iris",
                     "digits",
                     #"blobs",
                     "circles",
                     "adhoc",
                     #"voice",
-                    "susy",
-                    "susy_hard"
+                    #"susy",
+                    #"susy_hard"
                     ]
             dataset::Dataset = dataset_map[name]
             train_samples, test_samples, train_labels, test_labels = py"train_test_split"(dataset.training_samples, dataset.training_labels, train_size=0.7, random_state=seed, shuffle=true)

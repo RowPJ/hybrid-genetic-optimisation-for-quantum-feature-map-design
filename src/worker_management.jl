@@ -44,8 +44,12 @@ end
 # what to use to simulate kernels in the case of there being no worker
 # processes (or threading being used)
 ENV[REGISTER_VARIABLE] = CPU_REGISTER_TYPE
+
+local_workers_count = 28
+remote_workers_count = 0
+
 # create workers
-target_worker_counts = (12, 0)
+target_worker_counts = (local_workers_count, remote_workers_count)
 add_local_cpu_workers(target_worker_counts[1] - nprocs() + 1) # +1 since nprocs() includes the main process
 
 # create remote gpu workers on local machine
