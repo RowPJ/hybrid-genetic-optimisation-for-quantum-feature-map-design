@@ -2,13 +2,13 @@
 # It loads most/all of the other files and contains the high level
 # functions that depend on the other parts of the code.
 
-include("src/datasets.jl")
-include("src/population_evaluators.jl")
-include("src/worker_management.jl")
-include("src/nsga2.jl")
-include("src/parameter_optimization.jl")
-include("src/graphing.jl")
-include("src/tests.jl")
+include("datasets.jl")
+include("population_evaluators.jl")
+include("worker_management.jl")
+include("nsga2.jl")
+include("parameter_optimization.jl")
+include("graphing.jl")
+include("tests.jl")
 
 using PyCall
 
