@@ -6,4 +6,4 @@ source activate
 export LOCAL_WORKER_COUNT=$(nproc)
 
 # start the installed julia with this project and run the experiments
-~/.juliaup/bin/julia --project="." -e "cd(\"./src\"); include(\"./experiments.jl\"); main()"
+~/.juliaup/bin/julia --project="." -e "include(\"./src/experiments.jl\"); main()"
