@@ -1,5 +1,5 @@
 module HGOQFD
 
-include("experiments.jl")
+include("src/experiments.jl")
 
 end # module HGOQFD

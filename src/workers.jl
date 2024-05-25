@@ -862,4 +862,4 @@ function fitness_yao_parameter_training_target_alignment(chromosome, feature_cou
 end
 
 #include this file so workers can optimize parameters during genetic optimization process
-include("parameter_optimization.jl")
+include("src/parameter_optimization.jl")

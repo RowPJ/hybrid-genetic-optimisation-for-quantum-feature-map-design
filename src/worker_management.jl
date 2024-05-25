@@ -4,7 +4,7 @@
 
 using Distributed
 
-include("workers.jl")
+include("src/workers.jl")
 
 "Add workers from a remote machine through SSH with tunneling.
 The login details of the machine spec selected need to be
@@ -24,7 +24,7 @@ function add_remote_workers(;n_cpu=0, n_gpu=0, machine_spec::String="") #example
     # make gpu workers with gpu environment variable
     (n_gpu != 0) && append!(new_ids, addprocs([(machine_spec, n_gpu)]; env=[REGISTER_VARIABLE=>GPU_REGISTER_TYPE], shell=:wincmd, tunnel=true, sshflags="-vvv"))
     # have new workers load workers.jl
-    @everywhere new_ids include("workers.jl")
+    @everywhere new_ids include("src/workers.jl")
     return nothing
 end
 
@@ -36,7 +36,7 @@ function add_local_cpu_workers(count)
     # create workers
     new_ids = addprocs(count)
     # have new workers load workers.jl
-    @everywhere new_ids include("workers.jl")
+    @everywhere new_ids include("src/workers.jl")
     return nothing
 end
 
@@ -58,5 +58,5 @@ add_local_cpu_workers(target_worker_counts[1] - nprocs() + 1) # +1 since nprocs(
 "Convenience function for interactive development that reloads workers.jl on all worker processes.
 It should be used when the file is modified with the REPL running to have workers reflect the changes."
 function reload_workers_file()
-    @everywhere include("workers.jl")
+    @everywhere include("src/workers.jl")
 end
