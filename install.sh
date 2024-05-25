@@ -1,3 +1,6 @@
+#!/usr/bin/bash
+set -e
+
 # create python virtual environment and install requirements with pip
 python -m venv venv
 
