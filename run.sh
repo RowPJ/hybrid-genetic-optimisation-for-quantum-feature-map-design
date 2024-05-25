@@ -2,8 +2,10 @@
 source activate
 
 # set number of worker processes that julia should start to run
-# experiments
-export LOCAL_WORKER_COUNT=$(nproc)
+# experiments. we don't use $(nproc) since higher values can cause
+# segmentation faults.
+#export LOCAL_WORKER_COUNT=$(nproc)
+export LOCAL_WORKER_COUNT=12
 
 # start the installed julia with this project and run the experiments
 source ./activate
