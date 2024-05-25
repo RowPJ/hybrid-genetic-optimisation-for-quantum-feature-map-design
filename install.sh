@@ -12,4 +12,6 @@ curl -fsSL https://install.julialang.org | sh
 # install python requirements
 pip install -r requirements.txt
 
-julia --project="." -e "ENV[\"PYTHON\"]=\"$(pwd)/venv/bin/python\"; import Pkg; Pkg.instantiate(); Pkg.build(\"PyCall\")"
+# instantiate julia project with requirements, and configure to work
+# with the venv python
+~/.juliaup/bin/julia --project="." -e "ENV[\"PYTHON\"]=\"$(pwd)/venv/bin/python\"; import Pkg; Pkg.instantiate(); Pkg.build(\"PyCall\")"
