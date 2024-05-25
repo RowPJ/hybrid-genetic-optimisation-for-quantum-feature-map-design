@@ -45,7 +45,7 @@ end
 # processes (or threading being used)
 ENV[REGISTER_VARIABLE] = CPU_REGISTER_TYPE
 
-local_workers_count = 28
+local_workers_count = parse(Int64, ENV["LOCAL_WORKER_COUNT"])
 remote_workers_count = 0
 
 # create workers
