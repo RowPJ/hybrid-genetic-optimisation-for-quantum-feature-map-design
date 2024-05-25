@@ -1,5 +1,5 @@
 # activate virtual environment
-source activate
+source ./activate
 
 # set number of worker processes that julia should start to run
 # experiments. we don't use $(nproc) since higher values can cause
