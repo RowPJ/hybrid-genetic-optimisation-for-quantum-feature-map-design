@@ -1,6 +1,7 @@
 matplotlib
 numpy
 pandas
-pymoo
+pymoo<0.6.0                  #version 0.6.0 deprecated factory methods
 scikit-learn
 seaborn
+sympy
