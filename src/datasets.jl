@@ -541,7 +541,7 @@ function generate_adhoc(;num_train_samples=300, seed=22)
     # create training data and validation data pair (in adhoc dataset case, they are the same data)
     training_pair = (samples, labels)
     # save dataset to file
-    jldsave("adhoc_dataset.jld2", compress=true; training_pair=training_pair)
+    jldsave("data/adhoc_dataset.jld2", compress=true; training_pair=training_pair)
 end
 
 # random adhoc dataset
@@ -550,7 +550,7 @@ if !isdefined(Main, :adhoc_dataset)
 end
 "Loads pre-generated adhoc dataset from a file."
 function load_adhoc()
-    training_pair = JLD2.load("adhoc_dataset.jld2")["training_pair"]
+    training_pair = JLD2.load("data/adhoc_dataset.jld2")["training_pair"]
     validation_pair = training_pair
     #training_pair, validation_pair = separate_training_and_validation_sets(samples, labels, num_train_samples)
 
